@@ -1,20 +1,17 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Collect IceWarp service status: ports and startup mode.
+Collect IceWarp IMAP and POP3 service activation.
 
 .DESCRIPTION
-Maps to checklist items "Process SMTP", "Process POP3/IMAP", and the
-service port checks. Reads one setting per service through the shared
-IceWarp tool wrapper, so the configured timeout applies.
+Maps to the service.* section of the Linux health.json schema. The
+schema only exposes service.imap.active and service.pop3.active, so
+this collector produces exactly those two keys and nothing else. The
+activation flags are read through the shared IceWarp tool wrapper.
 
-Service startup values on Windows (verified live on 14.3.0.13):
-  0 = ssAutomatic
-  1 = ssManual
-
-Note: there is no C_System_Services_IMAP_Startup on Windows. tool.exe
-exits with code 8 for that property, so IMAP has no startup mode and is
-read as absent. IMAP is still reported with its port.
+Note: there is no C_System_Services_IMAP_Startup on Windows (tool.exe
+exits with code 8 for that property), so IMAP has no startup mode and
+is reported from its activation flag only.
 #>
 
 param(
@@ -24,39 +21,24 @@ param(
 
 $data = [ordered]@{}
 
-# Setting = startup key; Port = port key (empty string means "no port for this service").
-# IMAP deliberately has no startup key - it does not exist on Windows.
-$services = @(
-    [pscustomobject]@{ Key = 'service.smtp';       Setting = 'C_System_Services_SMTP_Startup';     Port = 'C_System_Services_SMTP_Port' }
-    [pscustomobject]@{ Key = 'service.pop3';       Setting = 'C_System_Services_POP3_Startup';     Port = 'C_System_Services_POP3_Port' }
-    [pscustomobject]@{ Key = 'service.imap';       Setting = '';                                   Port = 'C_System_Services_IMAP_Port' }
-    [pscustomobject]@{ Key = 'service.im';         Setting = 'C_System_Services_IM_Startup';       Port = '' }
-    [pscustomobject]@{ Key = 'service.groupware';  Setting = 'C_System_Services_GW_Startup';       Port = '' }
-    [pscustomobject]@{ Key = 'service.control';    Setting = 'C_System_Services_Control_Startup';  Port = '' }
-    [pscustomobject]@{ Key = 'service.ftp';        Setting = '';                                   Port = 'C_System_Services_FTP_Port' }
-)
+# service.imap.active - C_Mail_IMAP_Active is a Bool; 1/true = active.
+$imapActive = (Get-IceWarpSetting -Name 'C_Mail_IMAP_Active' -Context $Context)
+if ($imapActive -eq '1' -or $imapActive -ieq 'true') {
+    $data['service.imap.active'] = '1'
+} elseif ($imapActive -eq '0' -or $imapActive -ieq 'false') {
+    $data['service.imap.active'] = '0'
+} else {
+    $data['service.imap.active'] = $imapActive
+}
 
-foreach ($service in $services) {
-    $startup = if ($service.Setting) { Get-IceWarpSetting -Name $service.Setting -Context $Context } else { '' }
-    $port = if ($service.Port) { Get-IceWarpSetting -Name $service.Port -Context $Context } else { '' }
-
-    $data['{0}.startup' -f $service.Key] = $startup
-    if ($service.Port) {
-        $data['{0}.port' -f $service.Key] = $port
-    }
-
-    # Normalize the startup mode into a readable status.
-    # Windows enum order: 0 = ssAutomatic, 1 = ssManual.
-    if ($startup -eq '0' -or $startup -eq 0) {
-        $data['{0}.startup_mode' -f $service.Key] = 'automatic'
-        $data['{0}.active' -f $service.Key] = $true
-    } elseif ($startup -eq '1' -or $startup -eq 1) {
-        $data['{0}.startup_mode' -f $service.Key] = 'manual'
-        $data['{0}.active' -f $service.Key] = $false
-    } else {
-        $data['{0}.startup_mode' -f $service.Key] = $startup
-        $data['{0}.active' -f $service.Key] = $null
-    }
+# service.pop3.active - same logic for POP3.
+$pop3Active = (Get-IceWarpSetting -Name 'C_Mail_POP_Active' -Context $Context)
+if ($pop3Active -eq '1' -or $pop3Active -ieq 'true') {
+    $data['service.pop3.active'] = '1'
+} elseif ($pop3Active -eq '0' -or $pop3Active -ieq 'false') {
+    $data['service.pop3.active'] = '0'
+} else {
+    $data['service.pop3.active'] = $pop3Active
 }
 
 return $data

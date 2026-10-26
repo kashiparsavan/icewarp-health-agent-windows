@@ -1,16 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Collect the IceWarp version and basic Windows host information.
+Collect IceWarp version and basic Windows host information.
 
 .DESCRIPTION
-This is the first Windows collector and the reference for the collector
-contract:
-
-  * The file declares a mandatory -Context parameter.
-  * It returns exactly one IDictionary (an ordered dictionary is preferred).
-  * It must not write strings or other objects to the output pipeline.
-  * External calls go through the shared IceWarp tool wrapper.
+Maps to the general.* and icewarp.version / icewarp.tool / icewarp.installed
+sections of the Linux health.json schema. Produces exactly the same keys
+the Linux collectors produce, nothing more and nothing less. The agent
+framework injects agent.hostname, agent.time and agent.version itself,
+so this collector does not touch those.
 #>
 
 param(
@@ -18,34 +16,45 @@ param(
     [hashtable]$Context
 )
 
-$iceWarpVersion = Get-IceWarpSetting -Name 'C_Version' -Context $Context
-$iceWarpNiceVersion = Get-IceWarpSetting -Name 'C_NiceVersion' -Context $Context
-$toolAvailable = Test-IceWarpTool -ToolPath $Context.Config.ToolPath
+$data = [ordered]@{}
 
-$data = [ordered]@{
-    'icewarp.version'        = $iceWarpVersion
-    'icewarp.version.nice'   = $iceWarpNiceVersion
-    'icewarp.tool.path'      = [string]$Context.Config.ToolPath
-    'icewarp.tool.available' = [bool]$toolAvailable
-    'agent.powershell.version' = $PSVersionTable.PSVersion.ToString()
-}
+$iceWarpVersion = (Get-IceWarpSetting -Name 'C_Version' -Context $Context)
+$toolPath = [string]$Context.Config.ToolPath
+$toolAvailable = (Test-IceWarpTool -ToolPath $toolPath)
 
+# general.icewarp.version - the human-readable version string.
+$data['general.icewarp.version'] = $iceWarpVersion
+
+# icewarp.version - the same value under the icewarp.* namespace.
+$data['icewarp.version'] = $iceWarpVersion
+
+# icewarp.tool / icewarp.tool.exists - the tool path and whether it is
+# present, mirroring the Linux env collector.
+$data['icewarp.tool'] = $toolPath
+$data['icewarp.tool.exists'] = [bool]$toolAvailable
+
+# icewarp.installed - true when the IceWarp home directory exists.
+$data['icewarp.installed'] = (Test-Path -LiteralPath $Context.Config.IceWarpHome -PathType Container)
+
+# general.company - from the configuration file.
+$data['general.company'] = [string]$Context.Config.CompanyName
+
+# general.date - current timestamp, matching the Linux date format.
+$data['general.date'] = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+
+# general.os.* - Windows equivalents of /etc/os-release.
+$os = $null
 try {
     $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
-    $data['os.caption'] = [string]$os.Caption
-    $data['os.version'] = [string]$os.Version
-    $data['os.build'] = [string]$os.BuildNumber
-    $data['os.architecture'] = [string]$os.OSArchitecture
-} catch {
-    Write-AgentLog -Level WARN -Message ('Could not read Windows operating-system details: {0}' -f $_.Exception.Message)
-}
-
-if ($toolAvailable -and $iceWarpVersion) {
-    $data['collector.general.version'] = 'ok'
-} elseif ($toolAvailable) {
-    $data['collector.general.version'] = 'unknown'
+} catch { }
+if ($os) {
+    $data['general.os.name'] = [string]$os.Caption
+    $data['general.os.pretty'] = [string]$os.Caption
+    $data['general.os.version'] = [string]$os.Version
 } else {
-    $data['collector.general.version'] = 'tool_unavailable'
+    $data['general.os.name'] = [string]$env.OS
+    $data['general.os.pretty'] = [string]$env.OS
+    $data['general.os.version'] = ''
 }
 
 return $data

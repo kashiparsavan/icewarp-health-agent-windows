@@ -208,4 +208,28 @@ throw 'intentional test failure'
         Assert-Equal -Expected '1' -Actual $data['domain.count']
         Assert-Equal -Expected 'mtitc.ir' -Actual $data['domain.list']
     }
+
+    It 'new collectors return an IDictionary without throwing when tool.exe is absent' {
+        # No tool.exe exists on the dev box, so every Get-IceWarpSetting call
+        # must resolve to an empty string and every PowerShell cmdlet must
+        # be wrapped in try/catch. This asserts the collector contract:
+        # return exactly one IDictionary, never throw.
+        $config = Get-AgentConfig -Root $script:agentRoot
+        $context = Initialize-AgentContext -Root $script:agentRoot -Config $config -Version '0.1.0'
+
+        $collectors = @(
+            'collectors\Icewarp\SmtpSettings.ps1',
+            'collectors\Icewarp\Security.ps1',
+            'collectors\Icewarp\BackupArchive.ps1',
+            'collectors\Icewarp\OsStorage.ps1',
+            'collectors\Icewarp\DnsMailFlow.ps1'
+        )
+
+        foreach ($relative in $collectors) {
+            $path = Join-Path $script:agentRoot $relative
+            $result = & $path -Context $context
+            Assert-True -Condition ($result -is [System.Collections.IDictionary]) -Because (
+                "$relative must return an IDictionary, got {0}" -f $result.GetType().Name)
+        }
+    }
 }
