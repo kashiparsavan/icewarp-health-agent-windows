@@ -3,6 +3,28 @@
 All notable changes to the Windows implementation are documented here.
 The Linux agent keeps its own repository and changelog.
 
+## [Unreleased]
+
+### Added
+
+- Three IceWarp collectors ported from the Linux reference set:
+  Icewarp/ServiceStatus.ps1 (service ports and startup mode),
+  Icewarp/License.ps1 (license status, type, trial expiration), and
+  Icewarp/DomainsUsers.ps1 (auto-discovered domain limits).
+- Timeout-bounded 	ool.exe list and domain-setting helpers in
+  windows/lib/IceWarpTool.ps1: Invoke-IceWarpToolList,
+  Get-IceWarpDomainList, and Get-IceWarpDomainSetting.
+- Collector table and tool-wrapper section in windows/README.md.
+
+### Notes
+
+- Collectors build their own ordered dictionaries and never return
+  Context.Data, so the agent can enumerate them safely.
+- Domain listing filters out IceWarp's internal ##...## service domain.
+- Per-user settings (U_*) are intentionally not collected yet: listing
+  domains returns domain names only, and user-level reads require a
+  username.
+
 ## [0.1.0] - 2026-10-26
 
 ### Added

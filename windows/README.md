@@ -143,6 +143,16 @@ Rules:
 - `$Context` exposes `Config`, `Data`, `Root`, and `Version`. Modules may add
   data with `Set-AgentData`.
 
+## Collectors
+
+| Collector | Checklist items | Description |
+|---|---|---|
+| General/Version | IceWarp Version | C_Version, C_NiceVersion, OS details |
+| Icewarp/ServiceStatus | Process SMTP, Process POP3/IMAP | Service ports and startup mode |
+| Icewarp/License | IceWarp Expiration Date | License status, type, trial expiration |
+| Icewarp/DomainsUsers | Daily Send Email limit, Disk Quota | Auto-discovered domain limits |
+
+The first collector in 0.1.0 is collectors\General\Version.ps1, which reads
 The only collector in 0.1.0 is `collectors\General\Version.ps1`, which reads
 `C_Version` and `C_NiceVersion` and adds basic operating-system fields.
 
@@ -180,6 +190,23 @@ substitute for validating `tool.exe` output formatting, value semantics,
 service names, and Windows-only behavior on the lab server. A Windows
 `tool.exe` search/list export is still needed to confirm the property
 listing.
+
+
+## IceWarp tool wrapper
+
+`windows\lib\IceWarpTool.ps1` exposes every external call through
+timeout-bounded helpers. New in this release:
+
+| Function | Purpose |
+|---|---|
+| `Get-IceWarpSetting` | `tool.exe display system <key>` |
+| `Invoke-IceWarpTool` | Raw `tool.exe` call with timeout |
+| `Invoke-IceWarpToolList` | `tool.exe list <type>` with timeout |
+| `Get-IceWarpDomainList` | `tool.exe list domain`, internal `##...##` domain filtered out |
+| `Get-IceWarpDomainSetting` | `tool.exe display domain "<domain>" <key>` |
+
+None of these functions log setting values, because some IceWarp settings
+can contain sensitive data.
 
 ## Tests
 
