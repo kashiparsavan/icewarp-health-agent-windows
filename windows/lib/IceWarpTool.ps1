@@ -255,8 +255,12 @@ function Get-IceWarpDomainSetting {
     }
 
     try {
+        # No quotes around the domain name: tool.exe on Windows passes the
+        # argument string literally, so a surrounding " is treated as part
+        # of the name and the lookup fails. Domain names never contain
+        # spaces, so unquoted is safe.
         $raw = Invoke-IceWarpTool -ToolPath $config.ToolPath `
-            -Arguments ('display domain "{0}" {1}' -f $Domain, $Name) `
+            -Arguments ('display domain {0} {1}' -f $Domain, $Name) `
             -TimeoutSeconds ([int]$config.ToolTimeoutSeconds)
     } catch {
         Write-AgentLog -Level WARN -Message ('Could not read domain setting {0} for {1}: {2}' -f $Name, $Domain, $_.Exception.Message)
@@ -265,6 +269,94 @@ function Get-IceWarpDomainSetting {
 
     # tool.exe prints "D_NumberLimit: 5" - take the value after the first
     # colon on the first non-empty line.
+    foreach ($line in ($raw -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+        if ($line -match '^\s*[^:]+:\s*(.*)$') {
+            return $Matches[1].Trim()
+        }
+        return $line.Trim()
+    }
+
+    return ''
+}
+
+function Get-IceWarpAccountList {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Context
+    )
+
+    $config = $Context.Config
+    if (-not (Test-IceWarpTool -ToolPath $config.ToolPath)) {
+        return , @()
+    }
+
+    try {
+        $raw = Invoke-IceWarpToolList -ToolPath $config.ToolPath `
+            -ListType 'account' `
+            -TimeoutSeconds ([int]$config.ToolTimeoutSeconds)
+    } catch {
+        Write-AgentLog -Level WARN -Message ('Could not list IceWarp accounts: {0}' -f $_.Exception.Message)
+        return , @()
+    }
+
+    $accounts = @()
+    foreach ($line in ($raw -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+        $trimmed = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed)) {
+            continue
+        }
+        # Skip table separators and header rows the same way domains are.
+        if ($trimmed -match '^-{3,}$' -or $trimmed -match '^={3,}$') {
+            continue
+        }
+        if ($trimmed -match '^(Account|Name|Email|Type|ID)\s*$') {
+            continue
+        }
+        $accounts += ($trimmed -split '\s+')[0]
+    }
+
+    # Wrap so a one-element list does not unroll into a scalar.
+    return , $accounts
+}
+
+function Get-IceWarpAccountSetting {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Account,
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Context
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Account)) {
+        return ''
+    }
+
+    $config = $Context.Config
+    if (-not (Test-IceWarpTool -ToolPath $config.ToolPath)) {
+        return ''
+    }
+
+    try {
+        # Accounts are email addresses and can contain dots, but never
+        # spaces, so unquoted is safe and avoids the literal-quote bug.
+        $raw = Invoke-IceWarpTool -ToolPath $config.ToolPath `
+            -Arguments ('display account {0} {1}' -f $Account, $Name) `
+            -TimeoutSeconds ([int]$config.ToolTimeoutSeconds)
+    } catch {
+        Write-AgentLog -Level WARN -Message ('Could not read account setting {0} for {1}: {2}' -f $Name, $Account, $_.Exception.Message)
+        return ''
+    }
+
     foreach ($line in ($raw -split "`r?`n")) {
         if ([string]::IsNullOrWhiteSpace($line)) {
             continue
