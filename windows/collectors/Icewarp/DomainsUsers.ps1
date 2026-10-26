@@ -10,6 +10,12 @@ with the internal service domain ("##internalservicedomain.icewarp.com##")
 filtered out automatically. Per-domain limits are read for the first real
 domain only, since the checklist report needs one stable key to point at
 regardless of the real domain name.
+
+The list helper wraps its return with the comma operator to stop a
+one-element list unrolling into a scalar, which nests the element inside
+another array. This collector flattens the result to a plain string[] so
+every entry is guaranteed to be a System.String before it reaches the
+domain-setting call.
 #>
 
 param(
@@ -19,7 +25,22 @@ param(
 
 $data = [ordered]@{}
 
-$domains = @(Get-IceWarpDomainList -Context $Context)
+# Flatten whatever shape the list helper returns into a plain string[].
+# tool.exe on Windows may return one domain per line, a table, or a single
+# value; this loop is immune to all of those.
+$domains = @()
+foreach ($entry in @(Get-IceWarpDomainList -Context $Context)) {
+    if ($entry -is [System.Array]) {
+        foreach ($sub in $entry) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$sub)) {
+                $domains += [string]$sub
+            }
+        }
+    } elseif (-not [string]::IsNullOrWhiteSpace([string]$entry)) {
+        $domains += [string]$entry
+    }
+}
+
 if ($domains.Count -eq 0) {
     $data['domain.checked'] = $false
     $data['domain.reason'] = 'no domains returned by "tool list domain" (or tool.exe unavailable)'
@@ -32,7 +53,7 @@ $data['domain.count'] = $domains.Count
 $data['domain.list'] = ($domains -join ';')
 
 $count = 0
-foreach ($domain in @($domains)) {
+foreach ($domain in $domains) {
     $count++
     $keySafe = ($domain -replace '[^A-Za-z0-9]', '')
 

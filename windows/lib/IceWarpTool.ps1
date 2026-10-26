@@ -267,12 +267,18 @@ function Get-IceWarpDomainSetting {
         return ''
     }
 
-    # tool.exe prints "D_NumberLimit: 5" - take the value after the first
-    # colon on the first non-empty line.
+    # tool.exe prints "Domain <name> not found." when the lookup fails. That
+    # is a normal outcome, not an error, so treat it as an empty value
+    # rather than surfacing it as data.
     foreach ($line in ($raw -split "`r?`n")) {
         if ([string]::IsNullOrWhiteSpace($line)) {
             continue
         }
+        if ($line -match '^\s*Domain\s+.*not found') {
+            return ''
+        }
+        # tool.exe prints "D_NumberLimit: 5" - take the value after the first
+        # colon on the first non-empty line.
         if ($line -match '^\s*[^:]+:\s*(.*)$') {
             return $Matches[1].Trim()
         }
