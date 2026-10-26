@@ -203,15 +203,35 @@ function Get-IceWarpDomainList {
         if ([string]::IsNullOrWhiteSpace($line)) {
             continue
         }
+        $trimmed = $line.Trim()
+
         # IceWarp marks its internal service domain with ##...## delimiters.
         # It is not a real customer domain and must be skipped.
-        if ($line -match '^##.*##$') {
+        if ($trimmed -match '^##.*##$') {
             continue
         }
-        $domains += $line.Trim()
+
+        # tool.exe on Windows may emit a table with a header row and a
+        # dashed separator. Skip anything that is not a real domain name:
+        # a separator is all dashes/dots, a header is a known column name.
+        if ($trimmed -match '^-{3,}$' -or $trimmed -match '^={3,}$') {
+            continue
+        }
+        if ($trimmed -match '^(Domain|Name|Account|Type|ID)\s*$' -or
+            $trimmed -match '^(Domain|Name|Account|Type)\s+(.+)') {
+            continue
+        }
+
+        # If the line is a table row, take the first whitespace-delimited
+        # token as the domain name. If it is a plain one-per-line list, the
+        # token is the whole line.
+        $domains += ($trimmed -split '\s+')[0]
     }
 
-    return $domains
+    # The comma operator wraps the array so PowerShell does not unroll it
+    # when the function returns. Without this, a one-element array comes
+    # back as a scalar string and the caller's .Count fails.
+    return , $domains
 }
 
 function Get-IceWarpDomainSetting {

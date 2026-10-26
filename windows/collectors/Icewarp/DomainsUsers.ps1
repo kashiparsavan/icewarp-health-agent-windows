@@ -19,11 +19,7 @@ param(
 
 $data = [ordered]@{}
 
-$domains = Get-IceWarpDomainList -Context $Context
-if (-not $domains) {
-    $domains = @()
-}
-
+$domains = @(Get-IceWarpDomainList -Context $Context)
 if ($domains.Count -eq 0) {
     $data['domain.checked'] = $false
     $data['domain.reason'] = 'no domains returned by "tool list domain" (or tool.exe unavailable)'
