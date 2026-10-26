@@ -1,21 +1,17 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Collect IceWarp domain and user information.
+Collect IceWarp domain-level limits.
 
 .DESCRIPTION
-Maps to checklist items "Daily Send Email limit", "Disk Quota", and the
-domain-level limits. Domains are auto-discovered via "tool list domain",
-with the internal service domain ("##internalservicedomain.icewarp.com##")
-filtered out automatically. Per-domain limits are read for the first real
-domain only, since the checklist report needs one stable key to point at
-regardless of the real domain name.
+Port of the Linux collectors/icewarp/domain_limits.sh collector. It maps to
+the checklist item "Daily Send Email limit" and produces exactly the same
+keys the Linux version produces, nothing more and nothing less.
 
-The list helper wraps its return with the comma operator to stop a
-one-element list unrolling into a scalar, which nests the element inside
-another array. This collector flattens the result to a plain string[] so
-every entry is guaranteed to be a System.String before it reaches the
-domain-setting call.
+Domains are auto-discovered via "tool list domain", with the internal
+service domain ("##internalservicedomain.icewarp.com##") filtered out
+automatically. The domain name is sanitized the same way the Linux version
+does - strip spaces and tabs only, so "mtitc.ir" stays "mtitc.ir".
 #>
 
 param(
@@ -26,8 +22,6 @@ param(
 $data = [ordered]@{}
 
 # Flatten whatever shape the list helper returns into a plain string[].
-# tool.exe on Windows may return one domain per line, a table, or a single
-# value; this loop is immune to all of those.
 $domains = @()
 foreach ($entry in @(Get-IceWarpDomainList -Context $Context)) {
     if ($entry -is [System.Array]) {
@@ -42,20 +36,23 @@ foreach ($entry in @(Get-IceWarpDomainList -Context $Context)) {
 }
 
 if ($domains.Count -eq 0) {
-    $data['domain.checked'] = $false
+    $data['domain.checked'] = 'false'
     $data['domain.reason'] = 'no domains returned by "tool list domain" (or tool.exe unavailable)'
-    $data['domain.count'] = 0
+    $data['domain.count'] = '0'
     return $data
 }
 
-$data['domain.checked'] = $true
-$data['domain.count'] = $domains.Count
-$data['domain.list'] = ($domains -join ';')
+$data['domain.checked'] = 'true'
 
 $count = 0
 foreach ($domain in $domains) {
+    if ([string]::IsNullOrWhiteSpace($domain)) {
+        continue
+    }
     $count++
-    $keySafe = ($domain -replace '[^A-Za-z0-9]', '')
+
+    # Match the Linux sanitization exactly: strip spaces and tabs only.
+    $keySafe = ($domain -replace '[ \t]', '')
 
     $data["domain.${keySafe}.daily_send_messages_limit"] = `
         (Get-IceWarpDomainSetting -Domain $domain -Name 'D_NumberLimit' -Context $Context)
@@ -64,8 +61,8 @@ foreach ($domain in $domains) {
     $data["domain.${keySafe}.user_send_data_limit_mb_per_day"] = `
         (Get-IceWarpDomainSetting -Domain $domain -Name 'D_UserMB' -Context $Context)
 
-    # Fixed alias for the first domain seen, since the checklist report needs
-    # one stable key to point at regardless of the real domain name.
+    # Fixed alias for the first domain seen, since the checklist report
+    # needs one stable key to point at regardless of the real domain name.
     if ($count -eq 1) {
         $data['domain.primary.name'] = $domain
         $data['domain.primary.daily_send_messages_limit'] = `
@@ -73,9 +70,7 @@ foreach ($domain in $domains) {
     }
 }
 
-# Per-user data is not collected here: "tool list domain" returns domain
-# names only, and reading user-level settings (U_*) requires a username.
-# User listing is a separate follow-up. Domain-level limits (D_*) are the
-# checklist items this collector maps to.
+$data['domain.count'] = [string]$count
+$data['domain.list'] = ($domains -join ';')
 
 return $data

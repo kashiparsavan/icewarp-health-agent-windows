@@ -145,4 +145,67 @@ throw 'intentional test failure'
         Assert-Equal -Expected $false -Actual (Test-CollectorFilter -Name 'General/Version' -Filter 'dns')
         Assert-Equal -Expected $true -Actual (Test-CollectorFilter -Name 'General/Version' -Filter '')
     }
+
+    It 'DomainsUsers produces exactly the Linux key set and parses values correctly' {
+        # Mock the IceWarp tool helpers with the exact live output shapes.
+        # tool.exe prints the entity name on the first line and the setting
+        # as "SettingName: Value" on the next line. Defined here (local scope)
+        # so they shadow the dot-sourced wrappers for this test only.
+        function Get-IceWarpDomainList {
+            param([hashtable]$Context)
+            # Mirror the real helper: the internal ##...## domain is filtered
+            # out inside the wrapper, so the mock returns only real domains.
+            return , @('mtitc.ir')
+        }
+        function Get-IceWarpDomainSetting {
+            param([string]$Domain, [string]$Name, [hashtable]$Context)
+            if ($Name -eq 'D_NumberLimit') { return '0' }
+            if ($Name -eq 'D_DiskQuota')   { return '1024' }
+            if ($Name -eq 'D_UserMB')      { return '100' }
+            return ''
+        }
+        function Invoke-IceWarpTool { }
+        function Invoke-IceWarpToolList { }
+        function Test-IceWarpTool { return $true }
+        function Write-AgentLog { }
+
+        $config = Get-AgentConfig -Root $script:agentRoot
+        $context = Initialize-AgentContext -Root $script:agentRoot -Config $config -Version '0.1.0'
+        $collectorPath = Join-Path $script:agentRoot 'collectors\Icewarp\DomainsUsers.ps1'
+
+        # Invoke the collector directly so we assert on the dictionary it
+        # returns, not the merged agent data (which contains agent.* keys
+        # injected by the agent itself and is not the collector's concern).
+        $data = & $collectorPath -Context $context
+
+        # The exact key set the Linux collectors/icewarp/domain_limits.sh
+        # produces for one real domain. Nothing more, nothing less.
+        $expectedKeys = @(
+            'domain.checked',
+            'domain.mtitc.ir.daily_send_messages_limit',
+            'domain.mtitc.ir.disk_quota_kb',
+            'domain.mtitc.ir.user_send_data_limit_mb_per_day',
+            'domain.primary.name',
+            'domain.primary.daily_send_messages_limit',
+            'domain.count',
+            'domain.list'
+        )
+        $actualKeys = @($data.Keys)
+        $extra = @($actualKeys | Where-Object { $_ -notin $expectedKeys })
+        $missing = @($expectedKeys | Where-Object { $_ -notin $actualKeys })
+
+        Assert-True -Condition ($extra.Count -eq 0) -Because ("Unexpected keys: {0}" -f ($extra -join ', '))
+        Assert-True -Condition ($missing.Count -eq 0) -Because ("Missing keys: {0}" -f ($missing -join ', '))
+
+        # Values must be parsed from the "SettingName: Value" line, not the
+        # entity-name line that tool.exe prints first.
+        Assert-Equal -Expected 'true' -Actual $data['domain.checked']
+        Assert-Equal -Expected '0' -Actual $data['domain.mtitc.ir.daily_send_messages_limit']
+        Assert-Equal -Expected '1024' -Actual $data['domain.mtitc.ir.disk_quota_kb']
+        Assert-Equal -Expected '100' -Actual $data['domain.mtitc.ir.user_send_data_limit_mb_per_day']
+        Assert-Equal -Expected 'mtitc.ir' -Actual $data['domain.primary.name']
+        Assert-Equal -Expected '0' -Actual $data['domain.primary.daily_send_messages_limit']
+        Assert-Equal -Expected '1' -Actual $data['domain.count']
+        Assert-Equal -Expected 'mtitc.ir' -Actual $data['domain.list']
+    }
 }
