@@ -267,9 +267,14 @@ function Get-IceWarpDomainSetting {
         return ''
     }
 
-    # tool.exe prints "Domain <name> not found." when the lookup fails. That
-    # is a normal outcome, not an error, so treat it as an empty value
-    # rather than surfacing it as data.
+    # tool.exe prints the entity name on the first line and the setting as
+    # "SettingName: Value" on the next, e.g.:
+    #   mtitc.ir
+    #   D_NumberLimit: 0
+    # The first non-empty line is the entity name and has no colon, so the
+    # old "first line wins" logic returned the name as the value. Prefer the
+    # line that starts with the requested setting name instead.
+    $escapedName = [regex]::Escape($Name)
     foreach ($line in ($raw -split "`r?`n")) {
         if ([string]::IsNullOrWhiteSpace($line)) {
             continue
@@ -277,12 +282,21 @@ function Get-IceWarpDomainSetting {
         if ($line -match '^\s*Domain\s+.*not found') {
             return ''
         }
-        # tool.exe prints "D_NumberLimit: 5" - take the value after the first
-        # colon on the first non-empty line.
+        if ($line -match ('^\s*' + $escapedName + ':\s*(.*)$')) {
+            return $Matches[1].Trim()
+        }
+    }
+
+    # Fallback: any "Label: Value" line, in case the label differs slightly
+    # from the requested name. The entity-name line has no colon, so it is
+    # not matched here either.
+    foreach ($line in ($raw -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
         if ($line -match '^\s*[^:]+:\s*(.*)$') {
             return $Matches[1].Trim()
         }
-        return $line.Trim()
     }
 
     return ''
@@ -363,6 +377,23 @@ function Get-IceWarpAccountSetting {
         return ''
     }
 
+    # tool.exe prints the account name on the first line and the setting as
+    # "SettingName: Value" on the next, e.g.:
+    #   admin@mtitc.ir
+    #   U_Name: Administrator
+    # Prefer the line that starts with the requested setting name.
+    $escapedName = [regex]::Escape($Name)
+    foreach ($line in ($raw -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+        if ($line -match ('^\s*' + $escapedName + ':\s*(.*)$')) {
+            return $Matches[1].Trim()
+        }
+    }
+
+    # Fallback: any "Label: Value" line. The account-name line has no colon,
+    # so it is not matched here either.
     foreach ($line in ($raw -split "`r?`n")) {
         if ([string]::IsNullOrWhiteSpace($line)) {
             continue
@@ -370,7 +401,6 @@ function Get-IceWarpAccountSetting {
         if ($line -match '^\s*[^:]+:\s*(.*)$') {
             return $Matches[1].Trim()
         }
-        return $line.Trim()
     }
 
     return ''
