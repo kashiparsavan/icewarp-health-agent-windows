@@ -5,10 +5,9 @@ Collect Windows OS and storage information.
 
 .DESCRIPTION
 Maps to the os.*, system.swap.* and storage.* sections of the Linux
-health.json schema. Produces exactly the same keys the Linux collectors
-produce, nothing more and nothing less. Windows equivalents of the Linux
-/proc and df commands are used; a missing path yields an empty string
-rather than a crash.
+health.json schema. Windows equivalents of the Linux /proc and df commands
+are used; a missing path yields an UNKNOWN storage status rather than a
+crash or a false OK.
 #>
 
 param(
@@ -17,72 +16,101 @@ param(
 )
 
 $data = [ordered]@{}
+$invariant = [System.Globalization.CultureInfo]::InvariantCulture
 
 # --- OS basics ---
-# NOTE: the Linux schema only exposes os.cpu.*, os.memory.*,
-# os.swap.*, os.last_update_date, os.package_manager,
-# os.repository_access and os.time_sync.*. There is no os.caption /
-# os.version / os.build / os.architecture in the schema, so those are
-# deliberately NOT emitted here.
 $os = $null
 try {
     $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
 } catch { }
 
-# --- CPU count ---
-$cpuCount = 0
+# --- CPU count: sum logical processors, not sockets ---
+$processors = @()
 try {
-    $cpuCount = (Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop).Count
+    $processors = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop)
 } catch { }
+
+$cpuCount = 0
+foreach ($processor in $processors) {
+    $logical = 0
+    if ($null -ne $processor.NumberOfLogicalProcessors -and
+        [int]::TryParse([string]$processor.NumberOfLogicalProcessors, [ref]$logical) -and
+        $logical -gt 0) {
+        $cpuCount += $logical
+    }
+}
+if ($cpuCount -lt 1) {
+    $cpuCount = $processors.Count
+}
 if ($cpuCount -lt 1) { $cpuCount = 1 }
 $data['os.cpu.count'] = [string]$cpuCount
 
-# --- CPU load (1/5/15 min) - Win32_Processor.LoadPercentage is a 1-min
-# snapshot; the 5 and 15 min averages are not exposed, so we approximate
-# them as the same value. ---
-$load1 = 0
-try {
-    $load1 = [int]([Math]::Round((Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop).LoadPercentage))
-} catch { }
-$data['os.cpu.load1'] = [string]$load1
-$data['os.cpu.load5'] = [string]$load1
-$data['os.cpu.load15'] = [string]$load1
+# --- CPU load ---
+# Win32_Processor.LoadPercentage is a 1-minute snapshot; Windows does not
+# expose the Unix 5/15-minute averages, so all three use the same value.
+$load1 = 0.0
+$loads = @($processors | Where-Object { $null -ne $_.LoadPercentage } | ForEach-Object { [double]$_.LoadPercentage })
+if ($loads.Count -gt 0) {
+    $load1 = [Math]::Round((($loads | Measure-Object -Average).Average), 2)
+}
+$loadText = $load1.ToString('0.##', $invariant)
+$data['os.cpu.load1'] = $loadText
+$data['os.cpu.load5'] = $loadText
+$data['os.cpu.load15'] = $loadText
 
 # --- Memory (kb) ---
-$memTotal = 0
-$memFree = 0
+# Win32_OperatingSystem exposes TotalVisibleMemorySize and
+# FreePhysicalMemory in KB. TotalPhysicalMemory lives on
+# Win32_ComputerSystem and is in bytes; use it only as a fallback.
+$memTotalKb = 0
+$memAvailableKb = 0
 if ($os) {
-    $memTotal = [long]$os.TotalPhysicalMemory
-    $memFree = [long]$os.FreePhysicalMemory
+    if ($os.PSObject.Properties['TotalVisibleMemorySize'] -and $null -ne $os.TotalVisibleMemorySize) {
+        $memTotalKb = [long]$os.TotalVisibleMemorySize
+    } elseif ($os.PSObject.Properties['TotalPhysicalMemory'] -and $null -ne $os.TotalPhysicalMemory) {
+        $memTotalKb = [long]([double]$os.TotalPhysicalMemory / 1024)
+    } else {
+        try {
+            $computer = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+            if ($computer.PSObject.Properties['TotalPhysicalMemory'] -and $null -ne $computer.TotalPhysicalMemory) {
+                $memTotalKb = [long]([double]$computer.TotalPhysicalMemory / 1024)
+            }
+        } catch { }
+    }
+
+    if ($os.PSObject.Properties['FreePhysicalMemory'] -and $null -ne $os.FreePhysicalMemory) {
+        $memAvailableKb = [long]$os.FreePhysicalMemory
+    }
 }
-$data['os.memory.total_kb'] = [string]($memTotal / 1024)
-$data['os.memory.available_kb'] = [string]($memFree / 1024)
+$data['os.memory.total_kb'] = [string]$memTotalKb
+$data['os.memory.available_kb'] = [string]$memAvailableKb
 
 # --- Swap (kb) ---
-$swapTotal = 0
-$swapFree = 0
+# Win32_PageFileUsage reports AllocatedBaseSize and CurrentUsage in MB.
+$swapTotalKb = 0
+$swapFreeKb = 0
 try {
-    $pages = Get-CimInstance -ClassName Win32_PageFileUsage -ErrorAction Stop
-    foreach ($p in $pages) {
-        $swapTotal += [long]$p.AllocatedBaseSize
-        $swapFree += [long]([Math]::Max(0, $p.AllocatedBaseSize - $p.CurrentUsage))
+    $pages = @(Get-CimInstance -ClassName Win32_PageFileUsage -ErrorAction Stop)
+    foreach ($page in $pages) {
+        $allocatedMb = [long]$page.AllocatedBaseSize
+        $currentMb = [long]$page.CurrentUsage
+        $swapTotalKb += $allocatedMb * 1024
+        $swapFreeKb += [long]([Math]::Max(0, $allocatedMb - $currentMb)) * 1024
     }
 } catch { }
-$data['os.swap.total_kb'] = [string]($swapTotal * 1024)
-$data['os.swap.free_kb'] = [string]($swapFree * 1024)
+$data['os.swap.total_kb'] = [string]$swapTotalKb
+$data['os.swap.free_kb'] = [string]$swapFreeKb
 
 # --- Last OS update date ---
 $lastUpdate = ''
 $packageManager = 'unknown'
-if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) {
-    try {
-        $hotfixes = Get-CimInstance -ClassName Win32_QuickFixEngineering -ErrorAction Stop |
-            Sort-Object -Property InstalledOn -Descending | Select-Object -First 1
-        if ($hotfixes) {
-            $lastUpdate = $hotfixes.InstalledOn.ToString('yyyy-MM-dd HH:mm')
-        }
-    } catch { }
-}
+try {
+    $hotfix = Get-CimInstance -ClassName Win32_QuickFixEngineering -ErrorAction Stop |
+        Sort-Object -Property InstalledOn -Descending | Select-Object -First 1
+    if ($hotfix -and $hotfix.InstalledOn) {
+        $lastUpdate = ([datetime]$hotfix.InstalledOn).ToString('yyyy-MM-dd HH:mm')
+    }
+} catch { }
 $data['os.last_update_date'] = $lastUpdate
 $data['os.package_manager'] = $packageManager
 $data['os.repository_access'] = '0'
@@ -91,33 +119,31 @@ $data['os.repository_access'] = '0'
 $data['os.time_sync.method'] = 'w32time'
 $data['os.time_sync.synced'] = '0'
 try {
-    $ts = (w32tm query status 2>$null)
-    if ($ts -match 'Local Clock Precision') { $data['os.time_sync.method'] = 'w32time' }
-    if ($ts -match 'Last Successful Sync Time') { $data['os.time_sync.synced'] = '1' }
+    $statusText = (& w32tm /query /status 2>$null | Out-String)
+    if ($statusText -match '(?im)^\s*Source:\s*(.+)$') {
+        $source = $Matches[1].Trim()
+        if ($source -notmatch '(?i)local cmos|free-running|unsynchronized') {
+            $data['os.time_sync.synced'] = '1'
+        }
+    }
 } catch { }
 
 # --- system.swap.* summary ---
-$swapUsed = 0
-$swapTotalKb = 0
-if ([int]::TryParse([string]$data['os.swap.total_kb'], [ref]$swapTotalKb)) {
-    $swapFreeKb = 0
-    if ([int]::TryParse([string]$data['os.swap.free_kb'], [ref]$swapFreeKb)) {
-        $swapUsed = $swapTotalKb - $swapFreeKb
-    }
+$swapUsedKb = $swapTotalKb - $swapFreeKb
+$swapPercentText = '0.00'
+$swapPercent = 0.0
+if ($swapTotalKb -gt 0) {
+    $swapPercent = [Math]::Round($swapUsedKb / $swapTotalKb * 100, 2)
+    $swapPercentText = $swapPercent.ToString('0.00', $invariant)
 }
 $data['system.swap.total_kb'] = [string]$swapTotalKb
-$data['system.swap.used_kb'] = [string]$swapUsed
-if ($swapTotalKb -gt 0) {
-    $data['system.swap.used_percent'] = [Math]::Round($swapUsed / $swapTotalKb * 100, 2).ToString('0.00')
-} else {
-    $data['system.swap.used_percent'] = '0.00'
-}
-if ($swapTotalKb -gt 0 -and $swapUsed / $swapTotalKb * 100 -gt 3) {
-    $data['system.swap.history'] = ''
-    $data['system.swap.message'] = 'Swap is currently in use ({0}%)' -f $data['system.swap.used_percent']
+$data['system.swap.used_kb'] = [string]$swapUsedKb
+$data['system.swap.used_percent'] = $swapPercentText
+$data['system.swap.history'] = ''
+if ($swapTotalKb -gt 0 -and $swapPercent -gt 3) {
+    $data['system.swap.message'] = ('Swap is currently in use ({0}%)' -f $swapPercentText)
     $data['system.swap.status'] = 'CRITICAL'
 } else {
-    $data['system.swap.history'] = ''
     $data['system.swap.message'] = 'Swap is not in use'
     $data['system.swap.status'] = 'PASS'
 }
@@ -125,56 +151,92 @@ if ($swapTotalKb -gt 0 -and $swapUsed / $swapTotalKb * 100 -gt 3) {
 # --- storage.* - one block per monitored path, matching the Linux df output ---
 function Add-StorageStats {
     param([string]$Prefix, [string]$Path)
-    if ([string]::IsNullOrEmpty($Path)) {
-        $data["$prefix.device"] = ''
-        $data["$prefix.mount"] = ''
-        $data["$prefix.path"] = ''
-        $data["$prefix.status"] = ''
-        $data["$prefix.total_gb"] = ''
-        $data["$prefix.used_gb"] = ''
-        $data["$prefix.free_gb"] = ''
-        $data["$prefix.used_percent"] = ''
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        $data["$Prefix.device"] = ''
+        $data["$Prefix.mount"] = ''
+        $data["$Prefix.path"] = ''
+        $data["$Prefix.status"] = 'UNKNOWN'
+        $data["$Prefix.total_gb"] = ''
+        $data["$Prefix.used_gb"] = ''
+        $data["$Prefix.free_gb"] = ''
+        $data["$Prefix.used_percent"] = ''
         return
     }
-    $data["$prefix.path"] = $Path
+
+    $data["$Prefix.path"] = $Path
+
     try {
-        $drive = (Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
-            Where-Object { $_.Root -eq (Split-Path -Path $Path -Qualifier) } | Select-Object -First 1)
-        if (-not $drive) {
-            $drive = (Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | Select-Object -First 1)
+        $root = ''
+        try { $root = [System.IO.Path]::GetPathRoot($Path) } catch { }
+        if ([string]::IsNullOrWhiteSpace($root)) {
+            try { $root = Split-Path -Path $Path -Qualifier } catch { }
         }
-        $data["$prefix.device"] = [string]$drive.Root
-        $data["$prefix.mount"] = [string]$drive.Root
-        $totalKb = [long]($drive.Used + $drive.Free) * 1024
-        $usedKb = [long]$drive.Used * 1024
-        $freeKb = [long]$drive.Free * 1024
-        $data["$prefix.total_gb"] = ([Math]::Round($totalKb / 1024 / 1024, 1)).ToString('0.0')
-        $data["$prefix.used_gb"] = ([Math]::Round($usedKb / 1024 / 1024, 1)).ToString('0.0')
-        $data["$prefix.free_gb"] = ([Math]::Round($freeKb / 1024 / 1024, 1)).ToString('0.0')
-        if ($totalKb -gt 0) {
-            $data["$prefix.used_percent"] = [Math]::Round($usedKb / $totalKb * 100).ToString()
+        if ([string]::IsNullOrWhiteSpace($root) -and $Path -match '^([A-Za-z]:)') {
+            $root = $Matches[1] + '\'
+        }
+
+        $normalizedRoot = ([string]$root).TrimEnd([char[]]@('\', '/')).ToLowerInvariant()
+        $drive = $null
+        if ($normalizedRoot) {
+            $drive = @(Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
+                Where-Object { $_.Root.TrimEnd([char[]]@('\', '/')).ToLowerInvariant() -eq $normalizedRoot } |
+                Select-Object -First 1)
+        }
+
+        if (-not $drive -or $null -eq $drive.Used -or $null -eq $drive.Free) {
+            $data["$Prefix.device"] = ''
+            $data["$Prefix.mount"] = ''
+            $data["$Prefix.total_gb"] = ''
+            $data["$Prefix.used_gb"] = ''
+            $data["$Prefix.free_gb"] = ''
+            $data["$Prefix.used_percent"] = ''
+            $data["$Prefix.status"] = 'UNKNOWN'
+            return
+        }
+
+        # Get-PSDrive.Used/Free are bytes. Convert directly to GB.
+        $totalBytes = [double]$drive.Used + [double]$drive.Free
+        $usedBytes = [double]$drive.Used
+        $freeBytes = [double]$drive.Free
+
+        $data["$Prefix.device"] = [string]$drive.Root
+        $data["$Prefix.mount"] = [string]$drive.Root
+        $data["$Prefix.total_gb"] = ([Math]::Round($totalBytes / 1GB, 1)).ToString('0.0', $invariant)
+        $data["$Prefix.used_gb"] = ([Math]::Round($usedBytes / 1GB, 1)).ToString('0.0', $invariant)
+        $data["$Prefix.free_gb"] = ([Math]::Round($freeBytes / 1GB, 1)).ToString('0.0', $invariant)
+
+        $usedPercent = 0
+        if ($totalBytes -gt 0) {
+            $usedPercent = [int][Math]::Round($usedBytes / $totalBytes * 100)
+        }
+        $data["$Prefix.used_percent"] = [string]$usedPercent
+        if ($totalBytes -le 0) {
+            $data["$Prefix.status"] = 'UNKNOWN'
+        } elseif ($usedPercent -ge 90) {
+            $data["$Prefix.status"] = 'WARNING'
         } else {
-            $data["$prefix.used_percent"] = '0'
+            $data["$Prefix.status"] = 'OK'
         }
-        $data["$prefix.status"] = if ([int]$data["$prefix.used_percent"] -lt 90) { 'OK' } else { 'WARNING' }
     } catch {
-        $data["$prefix.device"] = ''
-        $data["$prefix.mount"] = ''
-        $data["$prefix.status"] = ''
-        $data["$prefix.total_gb"] = ''
-        $data["$prefix.used_gb"] = ''
-        $data["$prefix.free_gb"] = ''
-        $data["$prefix.used_percent"] = ''
+        $data["$Prefix.device"] = ''
+        $data["$Prefix.mount"] = ''
+        $data["$Prefix.status"] = 'UNKNOWN'
+        $data["$Prefix.total_gb"] = ''
+        $data["$Prefix.used_gb"] = ''
+        $data["$Prefix.free_gb"] = ''
+        $data["$Prefix.used_percent"] = ''
     }
 }
 
 $envDrive = $env:SystemDrive
 if ([string]::IsNullOrEmpty($envDrive)) { $envDrive = 'C:' }
+$envDrive = $envDrive.TrimEnd([char[]]@('\', '/'))
 
 Add-StorageStats -Prefix 'storage.archive' -Path (Join-Path $Context.Config.IceWarpHome 'archive')
 Add-StorageStats -Prefix 'storage.install' -Path $Context.Config.IceWarpHome
 Add-StorageStats -Prefix 'storage.mail' -Path (Join-Path $Context.Config.IceWarpHome 'mail')
-Add-StorageStats -Prefix 'storage.root_fs' -Path $envDrive
+Add-StorageStats -Prefix 'storage.root_fs' -Path ($envDrive + '\')
 Add-StorageStats -Prefix 'storage.root_home' -Path (Join-Path $envDrive 'Users')
 
 return $data

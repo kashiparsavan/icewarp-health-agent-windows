@@ -94,36 +94,48 @@ try {
     if ($config.ConfigUsedExample) {
         Write-AgentLog -Level WARN -Message 'Using config\agent.example.psd1. Copy it to config\agent.local.psd1 for site settings.'
     }
-
-    $context = Initialize-AgentContext -Root $script:AgentRoot -Config $config -Version $agentVersion
-    Write-AgentLog -Level INFO -Message ('Running {0} Windows collector(s).' -f $collectors.Count)
-
-    $collectorResults = @()
-    foreach ($collector in $collectors) {
-        $collectorName = Get-CollectorName -Root $script:AgentRoot -Path $collector.FullName
-        Write-Host ('[RUN ] {0}' -f $collectorName)
-        $collectorResults += Invoke-AgentCollector -Path $collector.FullName -Root $script:AgentRoot -Context $context
-    }
-    $collectorResults = @($collectorResults)
-
-    Write-AgentJson -Path $config.OutputJson -Data $context.Data
-
-    if ($Report) {
-        Write-AgentReport -Context $context -CollectorResults $collectorResults
+    if ($config.UnknownConfigKeys.Count -gt 0) {
+        Write-AgentLog -Level WARN -Message ('Ignoring unknown configuration keys: {0}' -f ($config.UnknownConfigKeys -join ', '))
     }
 
-    $failedCollectors = @($collectorResults | Where-Object { $_.Status -ne 'ok' })
-    if ($failedCollectors.Count -gt 0) {
-        Write-AgentLog -Level WARN -Message ('{0} collector(s) reported issues.' -f $failedCollectors.Count)
-    }
+    $lockPath = Join-Path $script:ProjectRoot '.agent.lock'
+    Enter-AgentLock -Path $lockPath
+    try {
+        $context = Initialize-AgentContext -Root $script:AgentRoot -Config $config -Version $agentVersion
+        Write-AgentLog -Level INFO -Message ('Running {0} Windows collector(s).' -f $collectors.Count)
 
-    Write-AgentLog -Level INFO -Message 'Windows agent finished.'
-    exit 0
+        $collectorResults = @()
+        foreach ($collector in $collectors) {
+            $collectorName = Get-CollectorName -Root $script:AgentRoot -Path $collector.FullName
+            Write-Host ('[RUN ] {0}' -f $collectorName)
+            $collectorResults += Invoke-AgentCollector -Path $collector.FullName -Root $script:AgentRoot -Context $context `
+                -TimeoutSeconds ([int]$config.CollectorTimeoutSeconds)
+        }
+        $collectorResults = @($collectorResults)
+
+        Write-AgentJson -Path $config.OutputJson -Data $context.Data
+
+        if ($Report) {
+            Write-AgentReport -Context $context -CollectorResults $collectorResults
+        }
+
+        $failedCollectors = @($collectorResults | Where-Object { $_.Status -ne 'ok' })
+        if ($failedCollectors.Count -gt 0) {
+            Write-AgentLog -Level WARN -Message ('{0} collector(s) reported issues.' -f $failedCollectors.Count)
+        }
+
+        Write-AgentLog -Level INFO -Message 'Windows agent finished.'
+        $exitCode = 0
+    } finally {
+        Exit-AgentLock -Path $lockPath
+    }
 } catch {
     if (Get-Command Write-AgentLog -ErrorAction SilentlyContinue) {
         Write-AgentLog -Level ERROR -Message $_.Exception.Message
     } else {
         Write-Error $_.Exception.Message
     }
-    exit 1
+    $exitCode = 1
 }
+
+exit $exitCode

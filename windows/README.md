@@ -4,10 +4,12 @@ This directory contains an independent Windows implementation of the IceWarp
 Health Agent. It is written for **Windows PowerShell 5.1** and does not use
 Bash, `agent.sh`, or any file under the Linux `lib/` directory.
 
-Current status: **0.1.0 scaffold**. The scaffolding, configuration, logging,
-`tool.exe` wrapper, flat JSON output, one sample collector, and Pester smoke
-tests are working. The full 113-item checklist, health rules, PDF reports, DNS
-collectors, and automatic updates are not ported yet.
+Current status: **0.1.0, nine collectors**. Configuration, logging,
+the `tool.exe` wrapper, schema-compatible flat JSON output, DNS/SMTP/security/
+storage/license/backup collectors, and Pester contract tests are in place.
+248 of the 411 Linux `health.json` keys are implemented; the remaining 163 are
+tracked in `docs/api-key-mapping.md`. PDF reports, health rules, the full
+113-item checklist and automatic updates are not ported yet.
 
 ## Requirements
 
@@ -140,8 +142,7 @@ Rules:
   apply the configured timeout.
 - The agent isolates collector failures, records `error` or `empty` status, and
   continues with the remaining collectors.
-- `$Context` exposes `Config`, `Data`, `Root`, and `Version`. Modules may add
-  data with `Set-AgentData`.
+ $+$Context exposes `Config`, `Data`, `Root`, and `Version`.
 
 ## Collectors
 
@@ -152,9 +153,8 @@ Rules:
 | Icewarp/License | IceWarp Expiration Date | License status, type, trial expiration |
 | Icewarp/DomainsUsers | Daily Send Email limit, Disk Quota | Auto-discovered domain limits |
 
-The first collector in 0.1.0 is collectors\General\Version.ps1, which reads
-The only collector in 0.1.0 is `collectors\General\Version.ps1`, which reads
-`C_Version` and `C_NiceVersion` and adds basic operating-system fields.
+`General/Version` reads `C_Version` and `C_NiceVersion` and adds basic
+operating-system fields; all nine collectors are listed in the table above.
 
 ## API Reference
 

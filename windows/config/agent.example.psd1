@@ -11,9 +11,11 @@
 
 @{
     # IceWarp installation and command-line tool.
-    IceWarpHome        = 'C:\Program Files\IceWarp'
-    ToolPath           = 'C:\Program Files\IceWarp\tool.exe'
-    ToolTimeoutSeconds = 10
+    IceWarpHome             = 'C:\Program Files\IceWarp'
+    ToolPath                = 'C:\Program Files\IceWarp\tool.exe'
+    ToolTimeoutSeconds      = 10
+    CollectorTimeoutSeconds = 120
+    NetworkTimeoutSeconds   = 10
 
     # Agent output. Both are relative to windows/ by default.
     OutputJson         = 'output\health.json'
@@ -24,7 +26,8 @@
     Technician         = 'Parsavan'
     ChecklistVersion   = '1.14'
 
-    # Optional DNS inputs for future mail/DNS collectors.
+    # Mail hostname used for SPF/DKIM/DMARC lookups and the live SMTP
+    # STARTTLS test. MailDomain is the fallback when MailHostname is empty.
     MailHostname       = ''
     MailDomain         = ''
 }

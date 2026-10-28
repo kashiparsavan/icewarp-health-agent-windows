@@ -13,16 +13,18 @@ function Get-AgentConfig {
     )
 
     $defaults = @{
-        IceWarpHome        = 'C:\Program Files\IceWarp'
-        ToolPath           = 'C:\Program Files\IceWarp\tool.exe'
-        ToolTimeoutSeconds = 10
-        OutputJson         = 'output\health.json'
-        LogDirectory       = 'logs'
-        CompanyName        = ''
-        Technician         = 'Parsavan'
-        ChecklistVersion   = '1.14'
-        MailHostname       = ''
-        MailDomain         = ''
+        IceWarpHome             = 'C:\Program Files\IceWarp'
+        ToolPath                = 'C:\Program Files\IceWarp\tool.exe'
+        ToolTimeoutSeconds      = 10
+        CollectorTimeoutSeconds = 120
+        NetworkTimeoutSeconds   = 10
+        OutputJson              = 'output\health.json'
+        LogDirectory            = 'logs'
+        CompanyName             = ''
+        Technician              = 'Parsavan'
+        ChecklistVersion        = '1.14'
+        MailHostname            = ''
+        MailDomain              = ''
     }
 
     $examplePath = Join-Path $Root 'config\agent.example.psd1'
@@ -44,19 +46,31 @@ function Get-AgentConfig {
 
     $loaded = Import-PowerShellDataFile -LiteralPath $candidate -ErrorAction Stop
     $config = @{}
+    $unknownKeys = @()
 
     foreach ($key in $defaults.Keys) {
         $config[$key] = $defaults[$key]
     }
     foreach ($key in $loaded.Keys) {
-        $config[$key] = $loaded[$key]
+        if ($defaults.ContainsKey($key)) {
+            $config[$key] = $loaded[$key]
+        } else {
+            $unknownKeys += [string]$key
+        }
     }
 
-    $timeout = 0
-    if (-not [int]::TryParse([string]$config.ToolTimeoutSeconds, [ref]$timeout) -or $timeout -lt 1) {
-        throw 'ToolTimeoutSeconds must be a positive integer.'
+    foreach ($timeoutKey in @('ToolTimeoutSeconds', 'CollectorTimeoutSeconds', 'NetworkTimeoutSeconds')) {
+        $timeout = 0
+        if (-not [int]::TryParse([string]$config[$timeoutKey], [ref]$timeout) -or $timeout -lt 1) {
+            throw ('{0} must be a positive integer.' -f $timeoutKey)
+        }
+        $config[$timeoutKey] = $timeout
     }
-    $config.ToolTimeoutSeconds = $timeout
+
+    if ([string]::IsNullOrWhiteSpace([string]$config.ChecklistVersion)) {
+        throw 'ChecklistVersion must not be empty.'
+    }
+    $config.ChecklistVersion = ([string]$config.ChecklistVersion).Trim()
 
     foreach ($key in @('IceWarpHome', 'ToolPath', 'OutputJson', 'LogDirectory')) {
         if ([string]::IsNullOrWhiteSpace([string]$config[$key])) {
@@ -65,8 +79,22 @@ function Get-AgentConfig {
         $config[$key] = Resolve-AgentPath -Path ([string]$config[$key]) -Root $Root
     }
 
+    foreach ($hostKey in @('MailHostname', 'MailDomain')) {
+        $rawValue = [string]$config[$hostKey]
+        if ([string]::IsNullOrWhiteSpace($rawValue)) {
+            $config[$hostKey] = ''
+            continue
+        }
+        $normalized = ConvertTo-AgentHostName -Value $rawValue
+        if ([string]::IsNullOrEmpty($normalized)) {
+            throw ("Configuration value '{0}' is not a valid DNS hostname: {1}" -f $hostKey, $rawValue)
+        }
+        $config[$hostKey] = $normalized
+    }
+
     $config['ConfigPath'] = $candidate
     $config['ConfigUsedExample'] = [string]::Equals($candidate, $examplePath, [System.StringComparison]::OrdinalIgnoreCase)
+    $config['UnknownConfigKeys'] = @($unknownKeys)
 
     return $config
 }

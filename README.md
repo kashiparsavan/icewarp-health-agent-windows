@@ -14,14 +14,14 @@ source the Linux lib/ directory.
 | Platform | Windows |
 | Entry point | windows\agent.ps1 |
 | Version | 0.1.0 |
-| Status | Scaffold |
+| Status | Nine collectors; 248 of 411 schema keys implemented |
 
-## Current Status
-
-The scaffolding, configuration, logging, IceWarp tool.exe wrapper, flat
-JSON output, one sample collector, and Pester smoke tests are working. The
-full 113-item checklist, health rules, PDF reports, DNS collectors, and
-automatic updates are not ported yet.
+Configuration, logging, the IceWarp tool.exe wrapper, schema-compatible flat
+JSON output, DNS/SMTP/security/storage/license/backup collectors, and Pester
+contract tests are in place. 248 of the 411 Linux health.json keys are
+implemented; the remaining 163 are tracked in docs/api-key-mapping.md. PDF
+reports, health rules, the full 113-item checklist and automatic updates are
+not ported yet.
 
 ## Requirements
 
@@ -113,8 +113,8 @@ Example JSON:
 ```json
 {
     "agent.version": "0.1.0",
-    "agent.platform": "windows",
-    "icewarp.version": "14.3.0.13",
+    "general.technician": "Parsavan",
+    "icewarp.version": "14.3.0.12",
     "icewarp.tool.available": true,
     "collector.general.version": "ok"
 }
@@ -122,8 +122,8 @@ Example JSON:
 
 The JSON is UTF-8 without a BOM. Empty string values are emitted as null,
 matching the Linux JSON contract; booleans and numbers remain native JSON
-types. PDF generation is not implemented on Windows yet; this scaffold is
-focused on a stable data path first.
+types. PDF generation is not implemented on Windows yet; the agent is focused
+on a stable data path first.
 
 ## API Reference
 
@@ -185,11 +185,11 @@ Rules:
   apply the configured timeout.
 - The agent isolates collector failures, records error or empty status, and
   continues with the remaining collectors.
-- Context exposes Config, Data, Root, and Version. Modules may add data with
-  Set-AgentData.
+- Context exposes Config, Data, Root, and Version.
 
-The only collector in 0.1.0 is windows\collectors\General\Version.ps1, which
-reads C_Version and C_NiceVersion and adds basic operating-system fields.
+Nine collectors ship in 0.1.0 (see `windows/README.md` collectors table):
+General/Version plus Icewarp/BackupArchive, DnsMailFlow, DomainsUsers,
+License, OsStorage, Security, SmtpSettings, and ServiceStatus.
 
 ## Tests
 

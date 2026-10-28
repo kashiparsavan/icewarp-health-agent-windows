@@ -4,11 +4,10 @@
 Collect IceWarp security settings.
 
 .DESCRIPTION
-Maps to the security.* section of the Linux health.json schema. Produces
-exactly the same keys the Linux collectors produce, nothing more and
-nothing less. Each setting is read through the shared IceWarp tool
-wrapper, so an unavailable tool.exe yields an empty string rather than
-a crash.
+Maps to the security.* section of the Linux health.json schema. Each setting
+is read through the shared IceWarp tool wrapper, so an unavailable tool.exe
+yields an empty string rather than a crash. Only the 411-key schema keys are
+emitted; diagnostics stay in the log file.
 #>
 
 param(
@@ -65,7 +64,7 @@ $data['security.intrusion.block_spam_score.raw'] = $rawSpamScore
 # raw 9216 -> displayed 9.00, i.e. raw/1024, not raw/100.
 $spNum = 0
 if ([int]::TryParse([string]$rawSpamScore, [ref]$spNum)) {
-    $data['security.intrusion.block_spam_score.value'] = ([Math]::Round($spNum / 1024, 2)).ToString('0.00')
+    $data['security.intrusion.block_spam_score.value'] = ([Math]::Round($spNum / 1024, 2)).ToString('0.00', [System.Globalization.CultureInfo]::InvariantCulture)
 } else {
     $data['security.intrusion.block_spam_score.value'] = $rawSpamScore
 }
@@ -95,16 +94,18 @@ $data['security.ip_reputation.use'] = (Get-IceWarpSetting -Name 'C_AS_IPreputati
 $data['security.antispam_live.enabled'] = (Get-IceWarpSetting -Name 'C_AS_Live_Enable' -Context $Context)
 
 # --- Auth schemes + DIGEST-MD5 detection ---
-$data['security.auth_schemes.raw'] = (Get-IceWarpSetting -Name 'C_Mail_Security_AuthScheme' -Context $Context)
-$authSchemes = $data['security.auth_schemes.raw']
+# The Windows help file has C_Accounts_Policies_Auth_Schemes; the old
+# C_Mail_Security_AuthScheme name does not exist.
+$data['security.auth_schemes.raw'] = (Get-IceWarpSetting -Name 'C_Accounts_Policies_Auth_Schemes' -Context $Context)
+$authSchemes = [string]$data['security.auth_schemes.raw']
 if (-not [string]::IsNullOrEmpty($authSchemes)) {
-    $data['security.digest_md5.enabled'] = ($authSchemes -match 'DIGEST-MD5').ToString().ToLower()
+    $data['security.digest_md5.enabled'] = [bool]($authSchemes -match 'DIGEST-MD5')
 } else {
     $data['security.digest_md5.enabled'] = ''
 }
 
 # --- Cyren (old anti-spam) folder check ---
-$data['security.cyren_folder.checked'] = 'true'
+$data['security.cyren_folder.checked'] = $true
 $cyrenPath = Join-Path $Context.Config.IceWarpHome 'cyren'
 if (-not (Test-Path -LiteralPath $cyrenPath -PathType Container)) {
     $data['security.cyren_folder.status'] = 'OK'
@@ -120,59 +121,75 @@ if (-not (Test-Path -LiteralPath $cyrenPath -PathType Container)) {
     }
 }
 
-# --- Port 9001 egress check (firewall) ---
-$data['security.port_9001_egress.checked'] = 'true'
+# --- Port 9001 egress check (Windows Firewall) ---
+# Get-NetFirewallRule does not expose LocalPort/RemotePort; the port lives on
+# Get-NetFirewallPortFilter. Only an enabled outbound Block rule counts.
+$data['security.port_9001_egress.checked'] = $true
 $blocked = $false
-$method = 'firewalld (port not in list - GOOD)'
+$method = 'Windows Firewall (port 9001 not blocked - GOOD)'
 try {
-    $ports = (Get-NetFirewallRule -ErrorAction Stop | Where-Object { $_.LocalPort -eq 9001 }).Count
-    if ($ports -gt 0) { $blocked = $true; $method = 'Windows Firewall rule for :9001 present' }
-} catch {
-    try {
-        $out = (netsh advfirewall firewall show rule all 2>$null)
-        if ($out -match ':9001') { $blocked = $true; $method = 'netsh firewall rule for :9001 present' }
-    } catch {
-        $method = 'firewall check unavailable'
+    $rules = @(Get-NetFirewallRule -Direction Outbound -Action Block -Enabled True -ErrorAction Stop)
+    foreach ($rule in $rules) {
+        if ($blocked) { break }
+        foreach ($portFilter in @(Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule -ErrorAction SilentlyContinue)) {
+            if ($null -eq $portFilter) { continue }
+            $remotePorts = @($portFilter.RemotePort)
+            foreach ($remotePort in $remotePorts) {
+                if ([string]$remotePort -eq '9001' -or [string]$remotePort -ieq 'Any') {
+                    $blocked = $true
+                    break
+                }
+            }
+            if ($blocked) { break }
+        }
     }
+    if ($blocked) {
+        $method = 'Windows Firewall outbound block rule for port 9001'
+    }
+} catch {
+    $method = 'Windows Firewall check unavailable'
 }
 $data['security.port_9001_egress.blocked'] = $blocked
 $data['security.port_9001_egress.method'] = $method
 
 # --- RBL self-check against the server's own public IP ---
-$data['security.rbl_self_check.checked'] = 'false'
-$publicIp = ''
+$networkTimeout = 10
 try {
-    $publicIp = (Invoke-WebRequest -Uri 'https://api.ipify.org' -UseBasicParsing -TimeoutSec 5).Content.Trim()
-} catch {
-    try {
-        $publicIp = (Invoke-WebRequest -Uri 'https://ident.me' -UseBasicParsing -TimeoutSec 5).Content.Trim()
-    } catch { }
-}
-if ([string]::IsNullOrEmpty($publicIp)) {
-    $data['security.rbl_self_check.ip'] = ''
-    $data['security.rbl_self_check.listed'] = 'false'
-    $data['security.rbl_self_check.listed_on'] = ''
-    $data['security.rbl_self_check.reason'] = 'could not resolve a public IP to check'
-} else {
-    $data['security.rbl_self_check.checked'] = 'true'
+    $parsedTimeout = [int]$Context.Config.NetworkTimeoutSeconds
+    if ($parsedTimeout -gt 0) { $networkTimeout = $parsedTimeout }
+} catch { }
+
+$data['security.rbl_self_check.checked'] = $false
+$data['security.rbl_self_check.ip'] = ''
+$data['security.rbl_self_check.listed'] = $false
+$data['security.rbl_self_check.listed_on'] = ''
+
+$publicIp = Get-AgentPublicIpAddress -TimeoutSeconds $networkTimeout
+if (-not [string]::IsNullOrEmpty($publicIp)) {
+    $data['security.rbl_self_check.checked'] = $true
     $data['security.rbl_self_check.ip'] = $publicIp
-    $data['security.rbl_self_check.listed'] = 'false'
-    $data['security.rbl_self_check.listed_on'] = ''
+
     $zones = @{
-        'zen_spamhaus_org'          = 'zen.spamhaus.org'
-        'bl_spamcop_net'           = 'bl.spamcop.net'
-        'dnsbl_sorbs_net'          = 'dnsbl.sorbs.net'
-        'b_barracudacentral_org'   = 'b.barracudacentral.org'
+        'zen_spamhaus_org'        = 'zen.spamhaus.org'
+        'bl_spamcop_net'         = 'bl.spamcop.net'
+        'dnsbl_sorbs_net'        = 'dnsbl.sorbs.net'
+        'b_barracudacentral_org' = 'b.barracudacentral.org'
     }
     $listedOn = @()
     foreach ($zoneKey in $zones.Keys) {
         $zoneHost = $zones[$zoneKey]
-        $result = ''
-        try {
-            $result = (Resolve-DnsName -Name $zoneHost -Type A -ErrorAction SilentlyContinue |
-                Where-Object { $_.Type -eq 'A' } | Select-Object -ExpandProperty Name -First 1)
-        } catch { }
-        if (-not [string]::IsNullOrEmpty($result)) {
+        $queryName = Get-AgentRblQueryName -Ip $publicIp -Zone $zoneHost
+        $listed = $false
+        if (-not [string]::IsNullOrEmpty($queryName)) {
+            foreach ($record in @(Resolve-AgentDnsName -Name $queryName -Type A)) {
+                if ($null -eq $record -or -not $record.PSObject.Properties['Type']) { continue }
+                if ([string]$record.Type -eq 'A') {
+                    $listed = $true
+                    break
+                }
+            }
+        }
+        if ($listed) {
             $data["security.rbl_self_check.zones.$zoneKey"] = 'LISTED'
             $listedOn += $zoneHost
         } else {
@@ -180,11 +197,45 @@ if ([string]::IsNullOrEmpty($publicIp)) {
         }
     }
     if ($listedOn.Count -gt 0) {
-        $data['security.rbl_self_check.listed'] = 'true'
+        $data['security.rbl_self_check.listed'] = $true
         $data['security.rbl_self_check.listed_on'] = ($listedOn -join ',')
-    } else {
-        $data['security.rbl_self_check.listed'] = 'false'
-        $data['security.rbl_self_check.listed_on'] = ''
+    }
+}
+
+# tool.exe may print Bool settings as true/false. These schema keys are
+# numbers (1/0), so normalize them. Boolean-valued computed keys such as
+# security.cyren_folder.checked stay JSON booleans.
+foreach ($flagKey in @(
+    'security.login.policy_enabled',
+    'security.login.2fa_bypass_enabled',
+    'security.login.block_mode',
+    'security.password_policy.active',
+    'security.password_policy.no_username_in_password',
+    'security.password_policy.expiration_active',
+    'security.password_policy.disable_access_when_expired',
+    'security.intrusion.process_smtp',
+    'security.intrusion.process_pop3_imap',
+    'security.intrusion.block_connections_per_minute.enabled',
+    'security.intrusion.block_failed_logins.enabled',
+    'security.intrusion.block_unknown_user_count.enabled',
+    'security.intrusion.block_relay_denied_count.enabled',
+    'security.intrusion.block_rset_count.enabled',
+    'security.intrusion.block_spam_score.enabled',
+    'security.intrusion.block_dnsbl_listed.enabled',
+    'security.intrusion.block_message_size.enabled',
+    'security.intrusion.close_blocked_connection',
+    'security.intrusion.close_all_other_connections',
+    'security.intrusion.cross_session_processing',
+    'security.intrusion.refuse_blocked_ip',
+    'security.dnsbl.use',
+    'security.dnsbl.close_sessions',
+    'security.reject_no_rdns',
+    'security.reject_domain_no_mx',
+    'security.ip_reputation.use',
+    'security.antispam_live.enabled'
+)) {
+    if ($data.Contains($flagKey)) {
+        $data[$flagKey] = ConvertTo-AgentNumericFlag -Value $data[$flagKey]
     }
 }
 

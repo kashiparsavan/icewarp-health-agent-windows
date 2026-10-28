@@ -18,13 +18,6 @@ param(
 
 $data = [ordered]@{}
 
-function Add-IfPresent {
-    param([string]$Key, [string]$Value)
-    if (-not [string]::IsNullOrEmpty($Value)) {
-        $data[$Key] = $Value
-    }
-}
-
 # --- Simple 1:1 setting reads ---
 $settings = @(
     @{ Key = 'smtp.add_return_path';          Name = 'C_Mail_SMTP_Delivery_ReturnPath' },
@@ -87,27 +80,63 @@ if ([string]::IsNullOrEmpty($sizeBytes)) {
     $data['smtp.max_message_size.mb'] = ''
 } else {
     $num = 0
-    if ([int]::TryParse([string]$sizeBytes, [ref]$num)) {
-        $data['smtp.max_message_size.mb'] = [Math]::Round($num / 1024 / 1024).ToString('0.0')
+    if ([long]::TryParse([string]$sizeBytes, [ref]$num)) {
+        $megabytes = $num / 1MB
+        $data['smtp.max_message_size.mb'] = if ($megabytes -eq [Math]::Round($megabytes)) {
+            ([long][Math]::Round($megabytes)).ToString([System.Globalization.CultureInfo]::InvariantCulture)
+        } else {
+            $megabytes.ToString('0.###', [System.Globalization.CultureInfo]::InvariantCulture)
+        }
     } else {
         $data['smtp.max_message_size.mb'] = $sizeBytes
     }
 }
 
-# --- starttls_live_test: a live TLS handshake on port 25 ---
-$data['smtp.starttls_live_test'] = $false
+# --- starttls_live_test: a real SMTP STARTTLS negotiation on port 25.
+# The shared helper reads the 220 banner, sends EHLO, checks for STARTTLS,
+# issues STARTTLS, and bounds both the connect and the TLS handshake. ---
+$startTlsHost = ConvertTo-AgentHostName -Value ([string]$Context.Config.MailHostname)
+if ([string]::IsNullOrEmpty($startTlsHost)) {
+    $startTlsHost = ConvertTo-AgentHostName -Value ([string]$Context.Config.MailDomain)
+}
+if ([string]::IsNullOrEmpty($startTlsHost)) {
+    $startTlsHost = ConvertTo-AgentHostName -Value ([string]$env:COMPUTERNAME)
+}
+$networkTimeout = 10
 try {
-    $tcp = New-Object System.Net.Sockets.TcpClient
-    if ($tcp.ConnectAsync([string]$Context.Config.MailHostname, 25).Wait(3000)) {
-        $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false,
-            { $true }, { $null })
-        $ssl.AuthenticateAsClient([string]$Context.Config.MailHostname)
-        $data['smtp.starttls_live_test'] = $true
-        $ssl.Dispose()
+    $parsedTimeout = [int]$Context.Config.NetworkTimeoutSeconds
+    if ($parsedTimeout -gt 0) { $networkTimeout = $parsedTimeout }
+} catch { }
+$data['smtp.starttls_live_test'] = [bool](Test-SmtpStartTls -Server $startTlsHost -Port 25 -TimeoutSeconds $networkTimeout)
+
+# tool.exe may print Bool settings as true/false. The 411-key schema stores
+# these flags as JSON numbers (1/0), so normalize them before the writer sees
+# them.
+foreach ($flagKey in @(
+    'smtp.add_return_path',
+    'smtp.dedupe',
+    'smtp.deny_vrfy',
+    'smtp.delivery_reports_enabled',
+    'smtp.enforce_tls_secondary_port',
+    'smtp.global_pop_before_smtp',
+    'smtp.header_footer_active',
+    'smtp.hide_ip',
+    'smtp.hide_server_version',
+    'smtp.mda_internal_delivery',
+    'smtp.max_message_size.enabled',
+    'smtp.rdns_in_received',
+    'smtp.reject_auth_sender_mismatch',
+    'smtp.relay.local_domain_only',
+    'smtp.relay.mode',
+    'smtp.require_helo_ehlo',
+    'smtp.use_incoming_queue',
+    'smtp.use_tls_ssl',
+    'smtp.max_per_domain_outgoing.enabled',
+    'smtp.max_per_domain_sender.enabled'
+)) {
+    if ($data.Contains($flagKey)) {
+        $data[$flagKey] = ConvertTo-AgentNumericFlag -Value $data[$flagKey]
     }
-    $tcp.Dispose()
-} catch {
-    # TLS handshake failed or host unreachable - leave as false.
 }
 
 return $data

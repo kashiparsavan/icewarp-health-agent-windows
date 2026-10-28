@@ -122,59 +122,9 @@ function Invoke-IceWarpToolList {
         [int]$TimeoutSeconds = 10
     )
 
-    if (-not (Test-IceWarpTool -ToolPath $ToolPath)) {
-        throw "IceWarp tool not found: $ToolPath"
-    }
-
-    if ($TimeoutSeconds -lt 1) {
-        $TimeoutSeconds = 1
-    }
-
-    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $ToolPath
-    $startInfo.Arguments = ('list {0}' -f $ListType)
-    $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    $startInfo.CreateNoWindow = $true
-    $startInfo.WorkingDirectory = Split-Path -Parent $ToolPath
-
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo = $startInfo
-
-    try {
-        [void]$process.Start()
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            try {
-                $process.Kill()
-            } catch {
-                # The process may have exited between the timeout check and Kill().
-            }
-            [void]$process.WaitForExit(1000)
-            throw "IceWarp tool timed out after $TimeoutSeconds seconds: list $ListType"
-        }
-
-        $stdout = $stdoutTask.Result
-        $stderr = $stderrTask.Result
-
-        if ($process.ExitCode -ne 0) {
-            $errorText = $stderr.Trim()
-            if (-not $errorText) {
-                $errorText = $stdout.Trim()
-            }
-            if (-not $errorText) {
-                $errorText = 'no error output'
-            }
-            throw "IceWarp tool exited with code $($process.ExitCode): $errorText"
-        }
-
-        return $stdout
-    } finally {
-        $process.Dispose()
-    }
+    return Invoke-IceWarpTool -ToolPath $ToolPath `
+        -Arguments ('list {0}' -f $ListType) `
+        -TimeoutSeconds $TimeoutSeconds
 }
 
 function Get-IceWarpDomainList {
@@ -212,8 +162,7 @@ function Get-IceWarpDomainList {
         }
 
         # tool.exe on Windows may emit a table with a header row and a
-        # dashed separator. Skip anything that is not a real domain name:
-        # a separator is all dashes/dots, a header is a known column name.
+        # dashed separator. Skip anything that is not a real domain name.
         if ($trimmed -match '^-{3,}$' -or $trimmed -match '^={3,}$') {
             continue
         }
@@ -222,10 +171,24 @@ function Get-IceWarpDomainList {
             continue
         }
 
-        # If the line is a table row, take the first whitespace-delimited
-        # token as the domain name. If it is a plain one-per-line list, the
-        # token is the whole line.
-        $domains += ($trimmed -split '\s+')[0]
+        # If the line is a table row, take the first token that is a valid
+        # domain name. This tolerates "1  example.com" while rejecting
+        # summary lines such as "Total: 5".
+        $tokens = $trimmed -split '\s+'
+        foreach ($token in $tokens) {
+            $candidate = $token.Trim().Trim(',').Trim(';').Trim('"').Trim("'").TrimEnd('.')
+            if (-not (Test-IceWarpDomainName -Name $candidate)) {
+                continue
+            }
+            # A domain in a table row normally contains a dot. For a plain
+            # single-token line, accept a single-label internal domain. This
+            # keeps progress/summary words ("Loading", "Total") out.
+            if (-not $candidate.Contains('.') -and $trimmed -ne $candidate) {
+                continue
+            }
+            $domains += $candidate
+            break
+        }
     }
 
     # The comma operator wraps the array so PowerShell does not unroll it
@@ -248,6 +211,10 @@ function Get-IceWarpDomainSetting {
     if ([string]::IsNullOrWhiteSpace($Domain)) {
         return ''
     }
+    if (-not (Test-IceWarpDomainName -Name $Domain)) {
+        Write-AgentLog -Level WARN -Message ('Refusing invalid IceWarp domain name: {0}' -f $Domain)
+        return ''
+    }
 
     $config = $Context.Config
     if (-not (Test-IceWarpTool -ToolPath $config.ToolPath)) {
@@ -260,7 +227,7 @@ function Get-IceWarpDomainSetting {
         # of the name and the lookup fails. Domain names never contain
         # spaces, so unquoted is safe.
         $raw = Invoke-IceWarpTool -ToolPath $config.ToolPath `
-            -Arguments ('display domain {0} {1}' -f $Domain, $Name) `
+            -Arguments ('display domain {0} {1}' -f $Domain.TrimEnd('.'), $Name) `
             -TimeoutSeconds ([int]$config.ToolTimeoutSeconds)
     } catch {
         Write-AgentLog -Level WARN -Message ('Could not read domain setting {0} for {1}: {2}' -f $Name, $Domain, $_.Exception.Message)
@@ -271,9 +238,7 @@ function Get-IceWarpDomainSetting {
     # "SettingName: Value" on the next, e.g.:
     #   mtitc.ir
     #   D_NumberLimit: 0
-    # The first non-empty line is the entity name and has no colon, so the
-    # old "first line wins" logic returned the name as the value. Prefer the
-    # line that starts with the requested setting name instead.
+    # Prefer the line that starts with the requested setting name.
     $escapedName = [regex]::Escape($Name)
     foreach ($line in ($raw -split "`r?`n")) {
         if ([string]::IsNullOrWhiteSpace($line)) {

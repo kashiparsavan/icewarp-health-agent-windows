@@ -4,11 +4,10 @@
 Collect IceWarp DNS mail-flow checks.
 
 .DESCRIPTION
-Maps to the dns.* section of the Linux health.json schema. Produces
-exactly the same keys the Linux collectors produce, nothing more and
-nothing less. PTR, SPF, DKIM, DMARC and external resolver tests are run
-with PowerShell's Resolve-DnsName cmdlet. A missing or unresolvable name
-yields an empty string rather than a crash.
+Maps to the dns.* section of the Linux health.json schema. PTR, SPF, DKIM,
+DMARC and external resolver tests use the shared Resolve-AgentDnsName
+helper, so every query has a bounded, mockable entry point. A missing or
+unresolvable name yields an empty value rather than a crash.
 #>
 
 param(
@@ -18,198 +17,245 @@ param(
 
 $data = [ordered]@{}
 
-# The mail hostname is the domain used for SPF/DKIM/DMARC lookups.
-$hostname = [string]$Context.Config.MailHostname
+$networkTimeout = 10
+try {
+    $parsedTimeout = [int]$Context.Config.NetworkTimeoutSeconds
+    if ($parsedTimeout -gt 0) { $networkTimeout = $parsedTimeout }
+} catch { }
+
+# The mail hostname is the domain used for SPF/DKIM/DMARC lookups. Normalize
+# away a scheme, path, port or trailing dot so every DNS query is valid.
+$hostname = ConvertTo-AgentHostName -Value ([string]$Context.Config.MailHostname)
 if ([string]::IsNullOrEmpty($hostname)) {
-    $hostname = [string]$Context.Config.MailDomain
+    $hostname = ConvertTo-AgentHostName -Value ([string]$Context.Config.MailDomain)
 }
 if ([string]::IsNullOrEmpty($hostname)) {
-    $hostname = $env:COMPUTERNAME
+    $hostname = ConvertTo-AgentHostName -Value ([string]$env:COMPUTERNAME)
 }
 
 # --- dns.configured_server - the DNS servers IceWarp was told to use ---
 $data['dns.configured_server'] = (Get-IceWarpSetting -Name 'C_Mail_SMTP_General_DNSServer' -Context $Context)
 
 # --- Public IP of this server (used by PTR and SPF) ---
-$publicIp = ''
-try {
-    $publicIp = (Invoke-WebRequest -Uri 'https://api.ipify.org' -UseBasicParsing -TimeoutSec 5).Content.Trim()
-} catch {
-    try {
-        $publicIp = (Invoke-WebRequest -Uri 'https://ident.me' -UseBasicParsing -TimeoutSec 5).Content.Trim()
-    } catch { }
-}
+$publicIp = Get-AgentPublicIpAddress -TimeoutSeconds $networkTimeout
 
 # --- dns.ptr.* ---
-if ([string]::IsNullOrEmpty($publicIp)) {
-    $data['dns.ptr.checked'] = 'false'
-    $data['dns.ptr.ip'] = ''
-    $data['dns.ptr.result'] = ''
-    $data['dns.ptr.exists'] = 'false'
-    $data['dns.ptr.matches_hostname'] = 'false'
-} else {
-    $data['dns.ptr.checked'] = 'true'
-    $data['dns.ptr.ip'] = $publicIp
+$data['dns.ptr.checked'] = $false
+$data['dns.ptr.ip'] = $publicIp
+$data['dns.ptr.result'] = ''
+$data['dns.ptr.exists'] = $false
+$data['dns.ptr.matches_hostname'] = $false
+if (-not [string]::IsNullOrEmpty($publicIp)) {
+    $data['dns.ptr.checked'] = $true
     $ptrResult = ''
-    try {
-        $ptr = (Resolve-DnsName -Name $publicIp -Type PTR -ErrorAction SilentlyContinue |
-            Where-Object { $_.Type -eq 'PTR' } | Select-Object -ExpandProperty Name -First 1)
-        if ($ptr) { $ptrResult = $ptr.TrimEnd('.') }
-    } catch { }
+    foreach ($record in @(Resolve-AgentDnsName -Name $publicIp -Type PTR)) {
+        if ($null -eq $record) { continue }
+        if ($record.PSObject.Properties['Type'] -and [string]$record.Type -ne 'PTR') { continue }
+        if ($record.PSObject.Properties['NameHost'] -and -not [string]::IsNullOrWhiteSpace([string]$record.NameHost)) {
+            $ptrResult = ConvertTo-AgentHostName -Value ([string]$record.NameHost)
+            if ($ptrResult) { break }
+        }
+    }
     $data['dns.ptr.result'] = $ptrResult
-    $data['dns.ptr.exists'] = (-not [string]::IsNullOrEmpty($ptrResult)).ToString().ToLower()
-    $data['dns.ptr.matches_hostname'] = ($ptrResult -ieq $hostname).ToString().ToLower()
+    $data['dns.ptr.exists'] = (-not [string]::IsNullOrEmpty($ptrResult))
+    if (-not [string]::IsNullOrEmpty($ptrResult) -and -not [string]::IsNullOrEmpty($hostname)) {
+        $data['dns.ptr.matches_hostname'] = ($ptrResult -ieq $hostname)
+    }
 }
 
 # --- External resolver tests ---
 $data['dns.resolver.external_test_host'] = 'google.com'
-$data['dns.resolver.external_test_ok'] = 'false'
-$data['dns.resolver.external_test_ok_google_com'] = 'false'
-$data['dns.resolver.external_test_ok_icewarp_com'] = 'false'
-$data['dns.resolver.external_test_ok_parsavan_com'] = 'false'
+$data['dns.resolver.external_test_ok'] = $false
 $anyOk = $false
 foreach ($extHost in @('google.com', 'icewarp.com', 'parsavan.com')) {
     $ok = $false
-    try {
-        $r = (Resolve-DnsName -Name $extHost -Type A -ErrorAction SilentlyContinue |
-            Where-Object { $_.Type -eq 'A' } | Select-Object -First 1)
-        if ($r) { $ok = $true }
-    } catch { }
-    # Sanitize the host name for the key: dots become underscores, matching
-    # the Linux schema (dns.resolver.external_test_ok_google_com etc.).
-    $safeHost = $extHost -replace '\.', '_'
-    $data["dns.resolver.external_test_ok_${safeHost}"] = $ok.ToString().ToLower()
-    if ($ok) { $anyOk = $true }
-}
-$data['dns.resolver.external_test_ok'] = $anyOk.ToString().ToLower()
-
-# --- dns.lookup_test.* ---
-$lookupHost = $hostname
-$data['dns.lookup_test.host'] = $lookupHost
-$data['dns.lookup_test.ok'] = 'false'
-$data['dns.lookup_test.result'] = ''
-try {
-    $r = (Resolve-DnsName -Name $lookupHost -Type A -ErrorAction SilentlyContinue |
-        Where-Object { $_.Type -eq 'A' } | Select-Object -First 1)
-    if ($r) {
-        $data['dns.lookup_test.ok'] = 'true'
-        $data['dns.lookup_test.result'] = $r.IPAddress
-    }
-} catch { }
-
-# --- dns.spf.* ---
-if ([string]::IsNullOrEmpty($hostname)) {
-    $data['dns.spf.checked'] = 'false'
-    $data['dns.spf.domain'] = ''
-    $data['dns.spf.found'] = 'false'
-    $data['dns.spf.record'] = ''
-    $data['dns.spf.checked_ip'] = $publicIp
-    $data['dns.spf.includes_server_ip'] = 'false'
-    $data['dns.spf.ip_coverage_via'] = ''
-} else {
-    $data['dns.spf.checked'] = 'true'
-    $data['dns.spf.domain'] = $hostname
-    $data['dns.spf.checked_ip'] = $publicIp
-    $spfRecord = ''
-    try {
-        $txt = (Resolve-DnsName -Name $hostname -Type TXT -ErrorAction SilentlyContinue |
-            Where-Object { $_.Type -eq 'TXT' } | Select-Object -ExpandProperty Strings -First 1)
-        if ($txt) { $spfRecord = [string]$txt }
-    } catch { }
-    if ($spfRecord -match 'v=spf1') {
-        $data['dns.spf.found'] = 'true'
-        $data['dns.spf.record'] = $spfRecord
-    } else {
-        $data['dns.spf.found'] = 'false'
-        $data['dns.spf.record'] = $spfRecord
-    }
-    $includesIp = $false
-    $coverageVia = ''
-    if (-not [string]::IsNullOrEmpty($publicIp)) {
-        if ($spfRecord -match "ip4:$publicIp" -or $spfRecord -match "ip6:$publicIp") {
-            $includesIp = $true
-            $coverageVia = 'literal ip4/ip6 mechanism'
-        } elseif ($spfRecord -match '\+a\b' -or $spfRecord -match '\+mx\b') {
-            $includesIp = $true
-            $coverageVia = 'a/mx mechanism'
+    foreach ($record in @(Resolve-AgentDnsName -Name $extHost -Type A)) {
+        if ($null -ne $record -and $record.PSObject.Properties['Type'] -and [string]$record.Type -eq 'A') {
+            $ok = $true
+            break
         }
     }
-    $data['dns.spf.includes_server_ip'] = $includesIp.ToString().ToLower()
-    $data['dns.spf.ip_coverage_via'] = $coverageVia
+    $safeHost = $extHost -replace '\.', '_'
+    $data["dns.resolver.external_test_ok_${safeHost}"] = $ok
+    if ($ok) { $anyOk = $true }
+}
+$data['dns.resolver.external_test_ok'] = $anyOk
+
+# --- dns.lookup_test.* ---
+$data['dns.lookup_test.host'] = $hostname
+$data['dns.lookup_test.ok'] = $false
+$data['dns.lookup_test.result'] = ''
+if (-not [string]::IsNullOrEmpty($hostname)) {
+    foreach ($record in @(Resolve-AgentDnsName -Name $hostname -Type A)) {
+        if ($null -eq $record -or -not $record.PSObject.Properties['Type'] -or [string]$record.Type -ne 'A') {
+            continue
+        }
+        if ($record.PSObject.Properties['IPAddress'] -and -not [string]::IsNullOrWhiteSpace([string]$record.IPAddress)) {
+            $data['dns.lookup_test.ok'] = $true
+            $data['dns.lookup_test.result'] = [string]$record.IPAddress
+            break
+        }
+    }
+}
+
+# --- dns.spf.* ---
+$data['dns.spf.checked'] = (-not [string]::IsNullOrEmpty($hostname))
+$data['dns.spf.domain'] = $hostname
+$data['dns.spf.found'] = $false
+$data['dns.spf.record'] = ''
+$data['dns.spf.checked_ip'] = $publicIp
+$data['dns.spf.includes_server_ip'] = $false
+$data['dns.spf.ip_coverage_via'] = ''
+
+if (-not [string]::IsNullOrEmpty($hostname)) {
+    $spfRecord = ''
+    foreach ($txtValue in @(Get-AgentDnsTxtValues -Records @(Resolve-AgentDnsName -Name $hostname -Type TXT))) {
+        if ($txtValue -match '(?i)(?:^|\s)v=spf1(?:\s|$)') {
+            $spfRecord = $txtValue
+            break
+        }
+    }
+
+    if (-not [string]::IsNullOrEmpty($spfRecord)) {
+        $data['dns.spf.found'] = $true
+        $data['dns.spf.record'] = $spfRecord
+    }
+
+    if (-not [string]::IsNullOrEmpty($spfRecord) -and -not [string]::IsNullOrEmpty($publicIp)) {
+        $covered = $false
+        $coverageVia = ''
+
+        foreach ($token in @($spfRecord -split '\s+')) {
+            if ($covered) { break }
+            if ([string]::IsNullOrWhiteSpace($token)) { continue }
+
+            if ($token -match '^([+\-~?]?)(ip4|ip6):(.+)$') {
+                $qualifier = $Matches[1]
+                $mechanism = $Matches[2].ToLowerInvariant()
+                $network = $Matches[3]
+                if ($qualifier -eq '-' -or $qualifier -eq '~' -or $qualifier -eq '?') { continue }
+                if ($mechanism -eq 'ip4' -and $publicIp.Contains(':')) { continue }
+                if ($mechanism -eq 'ip6' -and -not $publicIp.Contains(':')) { continue }
+                if (Test-AgentIpInCidr -Ip $publicIp -Cidr $network) {
+                    $covered = $true
+                    $coverageVia = 'literal ip4/ip6 mechanism'
+                }
+                continue
+            }
+
+            if ($token -match '^([+\-~?]?)a(?::([^/\s]+))?(?:/([0-9]{1,3}))?$') {
+                $qualifier = $Matches[1]
+                $target = $Matches[2]
+                $prefix = $Matches[3]
+                if ($qualifier -eq '-' -or $qualifier -eq '~' -or $qualifier -eq '?') { continue }
+                if ([string]::IsNullOrEmpty($target)) { $target = $hostname }
+
+                foreach ($record in @(Resolve-AgentDnsName -Name $target -Type A)) {
+                    if ($covered) { break }
+                    if ($null -eq $record -or -not $record.PSObject.Properties['IPAddress']) { continue }
+                    $address = [string]$record.IPAddress
+                    if ([string]::IsNullOrEmpty($address)) { continue }
+                    $matchesAddress = if ([string]::IsNullOrEmpty($prefix)) {
+                        ($address -eq $publicIp)
+                    } else {
+                        (Test-AgentIpInCidr -Ip $publicIp -Cidr ('{0}/{1}' -f $address, $prefix))
+                    }
+                    if ($matchesAddress) {
+                        $covered = $true
+                        $coverageVia = ('a mechanism ({0} A record matches)' -f $target)
+                    }
+                }
+                continue
+            }
+
+            if ($token -match '^([+\-~?]?)mx(?::([^/\s]+))?(?:/([0-9]{1,3}))?$') {
+                $qualifier = $Matches[1]
+                $target = $Matches[2]
+                $prefix = $Matches[3]
+                if ($qualifier -eq '-' -or $qualifier -eq '~' -or $qualifier -eq '?') { continue }
+                if ([string]::IsNullOrEmpty($target)) { $target = $hostname }
+
+                foreach ($mxRecord in @(Resolve-AgentDnsName -Name $target -Type MX)) {
+                    if ($covered) { break }
+                    if ($null -eq $mxRecord -or -not $mxRecord.PSObject.Properties['NameExchange']) { continue }
+                    $mxHost = ConvertTo-AgentHostName -Value ([string]$mxRecord.NameExchange)
+                    if ([string]::IsNullOrEmpty($mxHost)) { continue }
+
+                    foreach ($aRecord in @(Resolve-AgentDnsName -Name $mxHost -Type A)) {
+                        if ($covered) { break }
+                        if ($null -eq $aRecord -or -not $aRecord.PSObject.Properties['IPAddress']) { continue }
+                        $address = [string]$aRecord.IPAddress
+                        if ([string]::IsNullOrEmpty($address)) { continue }
+                        $matchesAddress = if ([string]::IsNullOrEmpty($prefix)) {
+                            ($address -eq $publicIp)
+                        } else {
+                            (Test-AgentIpInCidr -Ip $publicIp -Cidr ('{0}/{1}' -f $address, $prefix))
+                        }
+                        if ($matchesAddress) {
+                            $covered = $true
+                            $coverageVia = ('mx mechanism ({0} A record matches)' -f $mxHost)
+                        }
+                    }
+                }
+            }
+        }
+
+        $data['dns.spf.includes_server_ip'] = $covered
+        $data['dns.spf.ip_coverage_via'] = $coverageVia
+    }
 }
 
 # --- dns.dkim.* ---
-$data['dns.dkim.selectors_tried'] = 'default,dkim,mail,selector1,selector2,k1,s1,google'
-if ([string]::IsNullOrEmpty($hostname)) {
-    $data['dns.dkim.checked'] = 'false'
-    $data['dns.dkim.domain'] = ''
-    $data['dns.dkim.found'] = 'false'
-    $data['dns.dkim.selector_found'] = ''
-    $data['dns.dkim.record'] = ''
-} else {
-    $data['dns.dkim.checked'] = 'true'
-    $data['dns.dkim.domain'] = $hostname
-    $dkimRecord = ''
-    $dkimSelector = ''
-    foreach ($sel in 'default', 'dkim', 'mail', 'selector1', 'selector2', 'k1', 's1', 'google') {
-        try {
-            $txt = (Resolve-DnsName -Name "$sel._$hostname" -Type TXT -ErrorAction SilentlyContinue |
-                Where-Object { $_.Type -eq 'TXT' } | Select-Object -ExpandProperty Strings -First 1)
-            if ($txt -and [string]$txt -match 'v=DKIM1') {
-                $dkimRecord = [string]$txt
-                $dkimSelector = $sel
+$selectors = @('default', 'dkim', 'mail', 'selector1', 'selector2', 'k1', 's1', 'google')
+$data['dns.dkim.selectors_tried'] = ($selectors -join ',')
+$data['dns.dkim.checked'] = (-not [string]::IsNullOrEmpty($hostname))
+$data['dns.dkim.domain'] = $hostname
+$data['dns.dkim.found'] = $false
+$data['dns.dkim.selector_found'] = ''
+$data['dns.dkim.record'] = ''
+
+if (-not [string]::IsNullOrEmpty($hostname)) {
+    foreach ($selector in $selectors) {
+        $queryName = ('{0}._domainkey.{1}' -f $selector, $hostname)
+        foreach ($txtValue in @(Get-AgentDnsTxtValues -Records @(Resolve-AgentDnsName -Name $queryName -Type TXT))) {
+            if ($txtValue -match '(?i)^v=DKIM1(?:\s*;|\s|$)') {
+                $data['dns.dkim.found'] = $true
+                $data['dns.dkim.selector_found'] = $selector
+                $data['dns.dkim.record'] = $txtValue
                 break
             }
-        } catch { }
-    }
-    if ($dkimRecord) {
-        $data['dns.dkim.found'] = 'true'
-        $data['dns.dkim.selector_found'] = $dkimSelector
-        $data['dns.dkim.record'] = $dkimRecord
-    } else {
-        $data['dns.dkim.found'] = 'false'
-        $data['dns.dkim.selector_found'] = ''
-        $data['dns.dkim.record'] = ''
+        }
+        if ($data['dns.dkim.found']) { break }
     }
 }
 
 # --- dns.dmarc.* ---
-if ([string]::IsNullOrEmpty($hostname)) {
-    $data['dns.dmarc.checked'] = 'false'
-    $data['dns.dmarc.domain'] = ''
-    $data['dns.dmarc.found'] = 'false'
-    $data['dns.dmarc.record'] = ''
-    $data['dns.dmarc.policy'] = ''
-    $data['dns.dmarc.policy_note'] = ''
-} else {
-    $data['dns.dmarc.checked'] = 'true'
-    $data['dns.dmarc.domain'] = $hostname
+$data['dns.dmarc.checked'] = (-not [string]::IsNullOrEmpty($hostname))
+$data['dns.dmarc.domain'] = $hostname
+$data['dns.dmarc.found'] = $false
+$data['dns.dmarc.record'] = ''
+$data['dns.dmarc.policy'] = ''
+$data['dns.dmarc.policy_note'] = ''
+
+if (-not [string]::IsNullOrEmpty($hostname)) {
     $dmarcRecord = ''
-    try {
-        $txt = (Resolve-DnsName -Name "_$hostname" -Type TXT -ErrorAction SilentlyContinue |
-            Where-Object { $_.Type -eq 'TXT' } | Select-Object -ExpandProperty Strings -First 1)
-        if ($txt) { $dmarcRecord = [string]$txt }
-    } catch { }
-    if ($dmarcRecord -match 'v=DMARC1') {
-        $data['dns.dmarc.found'] = 'true'
+    foreach ($txtValue in @(Get-AgentDnsTxtValues -Records @(Resolve-AgentDnsName -Name ('_dmarc.{0}' -f $hostname) -Type TXT))) {
+        if ($txtValue -match '(?i)^v=DMARC1(?:\s*;|\s|$)') {
+            $dmarcRecord = $txtValue
+            break
+        }
+    }
+
+    if (-not [string]::IsNullOrEmpty($dmarcRecord)) {
+        $data['dns.dmarc.found'] = $true
         $data['dns.dmarc.record'] = $dmarcRecord
-        if ($dmarcRecord -match 'p=([^;]+)') {
+        if ($dmarcRecord -match '(?i)(?:^|;)\s*p\s*=\s*([^;]+)') {
             $policy = $Matches[1].Trim()
             $data['dns.dmarc.policy'] = $policy
-            if ($policy -eq 'none') {
+            if ($policy -ieq 'none') {
                 $data['dns.dmarc.policy_note'] = 'p=none - monitoring only, not actually enforcing/blocking anything'
-            } else {
-                $data['dns.dmarc.policy_note'] = ''
             }
-        } else {
-            $data['dns.dmarc.policy'] = ''
-            $data['dns.dmarc.policy_note'] = ''
         }
-    } else {
-        $data['dns.dmarc.found'] = 'false'
-        $data['dns.dmarc.record'] = $dmarcRecord
-        $data['dns.dmarc.policy'] = ''
-        $data['dns.dmarc.policy_note'] = ''
     }
 }
 

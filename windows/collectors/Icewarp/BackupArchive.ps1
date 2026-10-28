@@ -35,12 +35,36 @@ $data['icewarp.backup.auto_target'] = (Get-IceWarpSetting -Name 'c_system_tools_
 $data['icewarp.backup.auto_delete_after_days'] = (Get-IceWarpSetting -Name 'c_system_tools_autobackup_deleteafter' -Context $Context)
 $data['icewarp.backup.default'] = (Join-Path $Context.Config.IceWarpHome 'backup')
 
-# --- Last backup run: scan the backup directory for the newest .zip ---
+# --- Last backup run: scan the configured backup target for the newest .zip ---
 $lastFile = ''
 $lastTime = ''
 try {
-    $backupDir = Join-Path $Context.Config.IceWarpHome 'backup'
-    $latest = (Get-ChildItem -LiteralPath $backupDir -Filter '*.zip' -ErrorAction SilentlyContinue |
+    $backupRoot = Join-Path $Context.Config.IceWarpHome 'backup'
+
+    # The configured target may be a file pattern such as
+    # backup/"yyyy-mm-dd-HHnn".zip. Strip the placeholder quotes, resolve
+    # relative paths against IceWarpHome, and scan the containing directory.
+    $target = [string]$data['icewarp.backup.auto_target']
+    if (-not [string]::IsNullOrWhiteSpace($target)) {
+        $cleanTarget = [Environment]::ExpandEnvironmentVariables(($target.Trim().Trim('"') -replace '"', ''))
+        $looksLikeFile = ($cleanTarget -match '(?i)\.(zip|7z|bak|tar|gz)$') -or ($cleanTarget -match '\*')
+        $candidate = ''
+        if ($looksLikeFile) {
+            $parent = ''
+            try { $parent = Split-Path -Parent $cleanTarget } catch { }
+            if (-not [string]::IsNullOrWhiteSpace($parent)) {
+                $candidate = if ([System.IO.Path]::IsPathRooted($parent)) { $parent } else { Join-Path $Context.Config.IceWarpHome $parent }
+            }
+        } else {
+            $candidate = if ([System.IO.Path]::IsPathRooted($cleanTarget)) { $cleanTarget } else { Join-Path $Context.Config.IceWarpHome $cleanTarget }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Container)) {
+            $backupRoot = $candidate
+        }
+    }
+
+    $latest = (Get-ChildItem -LiteralPath $backupRoot -Filter '*.zip' -ErrorAction SilentlyContinue |
         Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1)
     if ($latest) {
         $lastFile = $latest.FullName
@@ -64,5 +88,24 @@ $data['archive.imap_folder_name'] = (Get-IceWarpSetting -Name 'C_System_Tools_Au
 $data['archive.integrate_with_imap'] = (Get-IceWarpSetting -Name 'C_System_Tools_AutoArchive_IMAPArchive' -Context $Context)
 $data['archive.trailer_path'] = (Get-IceWarpSetting -Name 'C_System_Tools_AutoArchive_TrailerPath' -Context $Context)
 $data['icewarp.archive.default'] = (Get-IceWarpSetting -Name 'C_System_Tools_AutoArchive_Path' -Context $Context)
+
+# Normalize Bool settings that the schema stores as numbers (1/0).
+foreach ($flagKey in @(
+    'backup.db.accounts.enabled',
+    'backup.db.as.enabled',
+    'backup.db.cache.enabled',
+    'backup.db.gw.enabled',
+    'backup.emails.enabled',
+    'icewarp.backup.auto_enabled',
+    'archive.active',
+    'archive.backup.active',
+    'archive.do_not_archive_rss',
+    'archive.do_not_archive_spam',
+    'archive.integrate_with_imap'
+)) {
+    if ($data.Contains($flagKey)) {
+        $data[$flagKey] = ConvertTo-AgentNumericFlag -Value $data[$flagKey]
+    }
+}
 
 return $data

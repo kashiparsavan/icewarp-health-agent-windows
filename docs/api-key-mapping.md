@@ -1,4 +1,4 @@
-﻿# IceWarp Health Agent - 411-Key API Mapping
+# IceWarp Health Agent - 411-Key API Mapping
 
 **Status:** Source of truth for the Windows implementation  
 **Schema source:** `C:\Users\mrkashi\Desktop\iceauto\health.json` (411 keys, IceWarp Health Check v1.14)  
@@ -46,8 +46,8 @@ Rules for this mapping:
 ## 3. Coverage summary
 
 - **Schema keys:** 411
-- **Implemented by the current Windows codebase (9 collectors + context):** 246
-- **Remaining (planned/derived):** 165
+- **Implemented by the current Windows codebase (9 collectors + context):** 248
+- **Remaining (planned/derived):** 163
 - Implemented sections: agent/general/service/domain, IceWarp environment/version/license, SMTP, security, DNS, backup/archive, OS/system/storage.
 - The largest remaining block is the 72-key `health.*` evaluation layer, which is a report engine rather than a set of `tool.exe` reads.
 
@@ -381,8 +381,8 @@ not verified Windows mappings.
 | `icewarp.config` | string | Linux: `collectors\icewarp\env.sh` | Planned |
 | `icewarp.dkim.active_flag` | boolean | Linux: `collectors\dns\dkim.sh` | Planned |
 | `icewarp.home` | string | Linux: `collectors\icewarp\env.sh` | Planned |
-| `icewarp.license.seats_info_available` | boolean | Linux: `collectors\icewarp\license_seats.sh` | Planned |
-| `icewarp.license.used_seats_note` | string | Linux: `collectors\icewarp\license_seats.sh` | Planned |
+| `icewarp.license.seats_info_available` | boolean | Linux: `collectors\icewarp\license_seats.sh` | Implemented |
+| `icewarp.license.used_seats_note` | string | Linux: `collectors\icewarp\license_seats.sh` | Implemented |
 | `icewarp.logs.default` | string | Linux: `collectors\icewarp\env.sh` | Planned |
 | `icewarp.mail.default` | string | Linux: `collectors\icewarp\env.sh` | Planned |
 | `icewarp.migration.active` | number | Linux: `collectors\icewarp\migration.sh`; setting hint `C_System_Tools_Migration_Active` | Planned |
@@ -562,55 +562,49 @@ sanitization rules as the Linux collectors.
 | RBL zones | `security.rbl_self_check.zones.<zone>` | Dots become underscores (`zen.spamhaus.org` -> `zen_spamhaus_org`). |
 | Resolver hosts | `dns.resolver.external_test_ok_<host>` | Dots become underscores (`google.com` -> `google_com`). |
 
-## 7. Known deviations and corrections
+## 7. Corrections applied in the Windows implementation
 
-- **Types:** the Linux JSON writer coerces digit-only strings to JSON numbers
-  and `true`/`false` strings to JSON booleans. The Windows writer currently
-  does not, so values are emitted as strings. This is a writer-level fix
-  (`windows/lib/Json.ps1`), not a per-key fix.
-- **`domain.list`:** the Linux value has a trailing semicolon
-  (`designhost.ir;`). The Windows collector currently joins without one.
-- **License:** the schema has 7 `icewarp.license.*` keys. The Windows collector
-  emits 5 of them and conditionally adds two non-schema keys
-  (`file_path`, `trial_expiration_source`). `seats_info_available` and
-  `used_seats_note` are not implemented.
-- **`security.auth_schemes.raw`:** `C_Mail_Security_AuthScheme` is absent from
-  both the Linux and Windows help files. The Windows help has
-  `C_Accounts_Policies_Auth_Schemes`; see `docs/REVIEW.md`.
-- **`os.memory.available_kb` / `storage.*_gb`:** `Win32_OperatingSystem.FreePhysicalMemory`
-  is already in KB, but the collector divides it by 1024, so the available
-  memory is 1024x too small. `os.memory.total_kb` uses `TotalPhysicalMemory`
-  (bytes) and is correct. `Get-PSDrive.Used/Free` are bytes, but the collector
-  multiplies by 1024 and divides by 1024 twice, making every `storage.*_gb`
-  value 1,048,576x too large. See `docs/REVIEW.md` for the full findings; the
-  mapping names themselves are correct.
-- **DNS record names:** DKIM must query
-  `<selector>._domainkey.<domain>` and DMARC `_dmarc.<domain>`. The current
-  Windows collector uses the wrong names; see `docs/REVIEW.md`.
-- **`dns.ptr.result`:** `Resolve-DnsName -Type PTR` returns the hostname in
-  `NameHost`; the current collector reads `Name`, which is the queried IP.
-  See `docs/REVIEW.md`.
-- **`smtp.starttls_live_test`:** the current implementation performs an
-  implicit TLS handshake on port 25 instead of issuing `STARTTLS`. It will
-  usually return `false` against a correctly configured MX.
-- **`security.port_9001_egress`:** `Get-NetFirewallRule` has no `LocalPort`
-  property; the filter must use `Get-NetFirewallPortFilter`.
-- **`security.rbl_self_check`:** the current query targets the bare zone
-  (for example `zen.spamhaus.org`) instead of
-  `<reversed-ip>.<zone>`.
-- **Non-schema keys:** the agent context emits `agent.platform`,
-  `checklist.version`, `agent.config.path`, and `agent.config.example_used`,
-  none of which are in the 411-key schema. `License.ps1` can also emit
-  `icewarp.license.file_path` and `icewarp.license.trial_expiration_source`,
-  and `Security.ps1` can emit `security.rbl_self_check.reason`. These must
-  be removed or gated before strict schema comparison is possible.
-- **`general.os.version`:** the schema value is numeric (for example `9.8`),
-  while Windows `Win32_OperatingSystem.Version` is a dotted quad
-  (`10.0.20348`). The JSON number coercion cannot convert a two-dot string;
-  document the value as a Windows version string or emit the build number.
-- **`smtp.max_message_size.mb`:** the collector formats the value as a
-  one-decimal string (`20.0`); the schema sample is the integer `20`.
+The Windows implementation now follows the Linux writer and the 411-key
+contract:
 
+- **Types:** `windows/lib/Json.ps1` sorts keys, turns empty strings into
+  `null`, emits digit-only strings as JSON numbers (preserving the original
+  numeric text), turns the exact strings `true`/`false` into JSON booleans,
+  and writes atomically. Boolean settings whose schema type is number are
+  normalized to `1`/`0` by `ConvertTo-AgentNumericFlag`.
+- **`domain.list`:** joined with `;` after every domain, including the last
+  one (`designhost.ir;`).
+- **License:** all 7 schema keys are emitted, including
+  `seats_info_available` and `used_seats_note`. The non-schema `file_path`
+  and `trial_expiration_source` keys are gone.
+- **Non-schema keys:** the context emits only `agent.version`,
+  `agent.hostname`, `agent.time`, `general.technician` and `general.company`.
+  The `security.rbl_self_check.reason` key is gone.
+- **OS/storage math:** `os.memory.available_kb` is not divided by 1024;
+  `os.memory.total_kb` uses `TotalVisibleMemorySize` (KB), with
+  `Win32_ComputerSystem.TotalPhysicalMemory` only as a fallback;
+  `storage.*_gb` converts `Get-PSDrive` bytes directly to GB; drive matching
+  normalizes `C:` and `C:\`; a missing drive is reported as `UNKNOWN`.
+- **CPU:** `os.cpu.count` is the sum of `NumberOfLogicalProcessors`, not the
+  socket count.
+- **DNS:** DKIM queries `<selector>._domainkey.<domain>`, DMARC queries
+  `_dmarc.<domain>`, PTR reads `NameHost`, multi-chunk TXT records are
+  joined, and SPF/DMARC are selected by record type. SPF matching parses
+  `ip4`/`ip6` CIDR, `+a` and `+mx` mechanisms.
+- **SMTP STARTTLS:** the collector issues `EHLO`, verifies that the server
+  advertises `STARTTLS`, issues `STARTTLS`, then performs the bounded TLS
+  handshake. Connect, read and handshake timeouts are enforced.
+- **Security:** RBL queries use `<reversed-ip>.<zone>`; the firewall check
+  uses `Get-NetFirewallRule` + `Get-NetFirewallPortFilter` for enabled
+  outbound `Block` rules; auth schemes read
+  `C_Accounts_Policies_Auth_Schemes`.
+- **`general.os.version`:** Windows emits the numeric major.minor pair
+  (`10.0`); the full build stays in `general.os.name`/`pretty`.
+- **`smtp.max_message_size.mb`:** integral MB values are emitted without a
+  trailing `.0`.
+
+Remaining work is the 163 schema keys listed as planned/derived in the
+mapping above.
 ## 8. Verification
 
 To verify this document against the schema:

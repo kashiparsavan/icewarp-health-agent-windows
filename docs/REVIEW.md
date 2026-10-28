@@ -6,6 +6,13 @@
 **Reference:** Linux agent at `C:\Users\mrkashi\Documents\Default Project\icewarp-health-agent` (read-only)  
 **Review date:** 2026-10-27
 
+> **Status update (2026-10-27):** the P0/P1 findings below are implemented in
+> the current code. See `docs/api-key-mapping.md` §7 for the exact corrections.
+> Implemented keys are now **248** (163 remaining); the writer coercion,
+> non-schema keys, `domain.list`, OS/storage math, DNS records, SMTP STARTTLS,
+> security RBL/firewall, license seats and backup-target scan have been fixed.
+> The findings below are retained as the original review of `14a2fdf`.
+
 ---
 
 ## Executive summary
@@ -19,16 +26,12 @@ If the count was four, the fifth (`DnsMailFlow.ps1`) is also already there.
 
 The agent is **not yet 1:1 with the 411-key schema**:
 
-| Measure | Current |
-|---|---|
-| Schema keys | 411 |
-| Keys implemented | **246** |
-| Keys remaining | **165** |
+| Keys implemented | **248** |
+| Keys remaining | **163** |
 | Windows collectors | 9 |
-| Pester tests | 10 |
-| CI | none |
-| Exact type parity | not yet |
-| Exact key parity | not yet (non-schema context keys) |
+| Pester tests | 22 |
+| Exact type parity | yes (Linux writer coercion applied) |
+| Exact key parity | not yet (163 of 411 schema keys pending) |
 
 The blockers are concentrated and fixable:
 

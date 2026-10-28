@@ -36,16 +36,20 @@ foreach ($entry in @(Get-IceWarpDomainList -Context $Context)) {
 }
 
 if ($domains.Count -eq 0) {
-    $data['domain.checked'] = 'false'
-    $data['domain.count'] = '0'
+    $data['domain.checked'] = $false
+    $data['domain.count'] = 0
     return $data
 }
 
-$data['domain.checked'] = 'true'
+$data['domain.checked'] = $true
 
 $count = 0
 foreach ($domain in $domains) {
     if ([string]::IsNullOrWhiteSpace($domain)) {
+        continue
+    }
+    if (-not (Test-IceWarpDomainName -Name $domain)) {
+        Write-AgentLog -Level WARN -Message ('Ignoring invalid domain from tool list: {0}' -f $domain)
         continue
     }
     $count++
@@ -69,7 +73,8 @@ foreach ($domain in $domains) {
     }
 }
 
-$data['domain.count'] = [string]$count
-$data['domain.list'] = ($domains -join ';')
+$data['domain.count'] = $count
+# Linux appends a semicolon after every entry, including the last one.
+$data['domain.list'] = (($domains -join ';') + ';')
 
 return $data
