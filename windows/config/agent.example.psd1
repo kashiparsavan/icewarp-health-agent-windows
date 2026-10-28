@@ -21,6 +21,12 @@
     OutputJson         = 'output\health.json'
     LogDirectory       = 'logs'
 
+    # Monitor health configuration (used by the Health Evaluation Engine).
+    MonitorDiskAlertMb               = 5120
+    MonitorCpuThresholdPercent       = 50
+    MonitorMemoryAlertKb             = 1048576
+    MonitorWebThreadpoolAlertSeconds = 300
+
     # Report identity. The technician can also be overridden with -Technician.
     CompanyName        = ''
     Technician         = 'Parsavan'

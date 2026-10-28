@@ -1,14 +1,14 @@
-# IceWarp Health Agent - 411-Key API Mapping
+# IceWarp Health Agent - 432-Key API Mapping
 
 **Status:** Source of truth for the Windows implementation  
-**Schema source:** `C:\Users\mrkashi\Desktop\iceauto\health.json` (411 keys, IceWarp Health Check v1.14)  
+**Schema source:** `C:\Users\mrkashi\Desktop\iceauto\health.json` (432 keys, IceWarp Health Check v1.14)  
 **Windows repository:** `C:\Projects\icewarp-health-agent-windows`  
-**Last updated:** 2026-10-27
+**Last updated:** 2026-10-28
 
 ## 1. Purpose
 
 This document is the permanent, authoritative mapping between the Linux
-`health.json` 411-key schema and the Windows IceWarp `tool.exe` settings.
+`health.json` 432-key schema and the Windows IceWarp `tool.exe` settings.
 It exists so the mapping is never again reconstructed from memory or a
 throw-away text file. The earlier ad-hoc `1. ALL smtp. KEYS.txt` was not
 present in the repository; this document reconstructs and supersedes it from
@@ -16,7 +16,7 @@ the schema, the Windows collector source, and the Linux reference collectors.
 
 Rules for this mapping:
 
-1. The **Schema key** column is copied verbatim from the 411-key Linux
+1. The **Schema key** column is copied verbatim from the 432-key Linux
    `health.json`. It is the contract; do not rename keys in the Windows agent.
 2. The **Windows source** column names the `tool.exe` setting, OS API, or
    computed expression used by the Windows collector.
@@ -40,16 +40,16 @@ Rules for this mapping:
 | **Implemented** | A Windows collector emits this key today. |
 | **Implemented (dynamic)** | Emitted per domain, drive, RBL zone, or test host. |
 | **Planned** | The Linux reference collector exists; the Windows collector is not written yet. |
-| **Derived** | Computed from other collected keys (health evaluation, watchdog summary); not a raw setting. |
+| **Derived** | Computed from other collected keys (for example, the watchdog summary); not a raw setting. |
 | **Unmapped** | No Linux collector or Windows source has been identified yet. |
 
 ## 3. Coverage summary
 
-- **Schema keys:** 411
-- **Implemented by the current Windows codebase (9 collectors + context):** 248
-- **Remaining (planned/derived):** 163
-- Implemented sections: agent/general/service/domain, IceWarp environment/version/license, SMTP, security, DNS, backup/archive, OS/system/storage.
-- The largest remaining block is the 72-key `health.*` evaluation layer, which is a report engine rather than a set of `tool.exe` reads.
+- **Schema keys:** 432
+- **Implemented by the current Windows codebase (10 collectors + health engine + context):** 340
+- **Remaining (planned):** 92
+- Implemented sections: agent/general/service/domain, IceWarp environment/version/license, SMTP, security, DNS, backup/archive, OS/system/storage, System Monitor, and the full health evaluation layer.
+- The 84-key `health.*` evaluation layer and all 8 `monitor.*` source keys are now implemented. The remaining keys are mostly direct `tool.exe` reads for admin, antispam, database, directory cache, logging, queue, watchdog, and MySQL.
 
 ### Remaining keys by area
 
@@ -57,17 +57,16 @@ Rules for this mapping:
 |---|---:|
 | `admin.*` | 4 |
 | `antispam.*` | 4 |
-| `database.*` | 4 |
+| `database.*` | 5 |
 | `directory_cache.*` | 4 |
 | `fulltext.*` | 2 |
-| `health.*` | 72 |
 | `http.*` | 2 |
-| `icewarp.*` | 35 |
+| `icewarp.*` | 33 |
 | `logging.*` | 4 |
-| `monitor.*` | 8 |
-| `mysql.*` | 1 |
+| `mysql.*` | 9 |
 | `queue.*` | 3 |
 | `watchdog.*` | 22 |
+| **Total** | **92** |
 
 ## 4. Implemented mappings
 
@@ -357,7 +356,7 @@ Windows collectors. The collector path is shown in the section heading.
 
 ## 5. Remaining and planned mappings
 
-These keys are in the 411-key schema but are not yet emitted by the
+These keys are in the 432-key schema but are not yet emitted by the
 Windows agent. The Linux reference is shown so the future collector has a
 starting point. Setting names in this section are extracted from the Linux
 collectors and **must be verified on Windows** before use. Hints are shown
@@ -418,14 +417,14 @@ not verified Windows mappings.
 | `logging.mailqueue.level` | number | Linux: `collectors\logging\mailqueue.sh` | Planned |
 | `logging.maintenance_log_level` | number | Linux: `collectors\logging\sql_auth_log.sh`; setting hint `C_Accounts_Global_Accounts_MaintenanceLog` | Planned |
 | `logging.sql_log_type` | number | Linux: `collectors\logging\sql_auth_log.sh`; setting hint `C_System_SQLLogType` | Planned |
-| `monitor.alert_email` | string or null | Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_ReportAddress` | Planned |
-| `monitor.cpu.threshold_minutes` | number | Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_CPUUsagePeriod` | Planned |
-| `monitor.cpu.threshold_percent` | number | Linux: `collectors\icewarp\system_monitor.sh` | Planned |
-| `monitor.disk.alert_below_mb` | number | Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_DiskSize` | Planned |
-| `monitor.enabled` | number | Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_Enable` | Planned |
-| `monitor.memory.alert_below_gb` | number | Linux: `collectors\icewarp\system_monitor.sh` | Planned |
-| `monitor.memory.alert_below_kb` | number | Linux: `collectors\icewarp\system_monitor.sh` | Planned |
-| `monitor.web_threadpool.alert_seconds` | number | Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_WebThreadPoolThreshold` | Planned |
+| `monitor.alert_email` | string or null | Windows: `windows/collectors/Icewarp/Monitor.ps1`; Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_ReportAddress` | Implemented |
+| `monitor.cpu.threshold_minutes` | number | Windows: `windows/collectors/Icewarp/Monitor.ps1`; Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_CPUUsagePeriod` | Implemented |
+| `monitor.cpu.threshold_percent` | number | Windows: `windows/collectors/Icewarp/Monitor.ps1`; Linux: `collectors\icewarp\system_monitor.sh` | Implemented |
+| `monitor.disk.alert_below_mb` | number | Windows: `windows/collectors/Icewarp/Monitor.ps1`; Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_DiskSize` | Implemented |
+| `monitor.enabled` | number | Windows: `windows/collectors/Icewarp/Monitor.ps1`; Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_Enable` | Implemented |
+| `monitor.memory.alert_below_gb` | number | Windows: `windows/collectors/Icewarp/Monitor.ps1`; Linux: `collectors\icewarp\system_monitor.sh` | Implemented |
+| `monitor.memory.alert_below_kb` | number | Windows: `windows/collectors/Icewarp/Monitor.ps1`; Linux: `collectors\icewarp\system_monitor.sh` | Implemented |
+| `monitor.web_threadpool.alert_seconds` | number | Windows: `windows/collectors/Icewarp/Monitor.ps1`; Linux: `collectors\icewarp\system_monitor.sh`; setting hint `C_System_Tools_Monitor_WebThreadPoolThreshold` | Implemented |
 | `queue.smtp.incoming.enabled` | number | Linux: `collectors\queue\incoming_queue_enabled.sh` | Planned |
 | `queue.smtp.incoming.size` | number | Linux: `collectors\queue\incoming_queue.sh` | Planned |
 | `queue.smtp.no_retry` | number | Linux: `collectors\queue\no_retry.sh` | Planned |
@@ -461,6 +460,7 @@ not verified Windows mappings.
 | `antispam.max_threads` | number | Linux: `collectors\security\antispam_policy.sh`; setting hint `C_AS_SpamMaxThreads` | Planned |
 | `antispam.mode` | number | Linux: `collectors\security\antispam_policy.sh`; setting hint `C_AS_General_AntispamMode` | Planned |
 | `database.connection_string_raw` | string | Linux: `collectors\icewarp\database_type.sh` | Planned |
+| `database.host` | string | Linux: `collectors\icewarp\database_type.sh` | Planned |
 | `database.mysql_server_section_applicable` | string | Linux: `collectors\icewarp\database_type.sh` | Planned |
 | `database.scope` | string | Linux: `collectors\icewarp\database_type.sh` | Planned |
 | `database.type` | string | Linux: `collectors\icewarp\database_type.sh` | Planned |
@@ -471,87 +471,111 @@ not verified Windows mappings.
 | `fulltext.enabled` | number | Linux: `collectors\fulltext\enabled.sh` | Planned |
 | `fulltext.scanner.queues` | string or null | Linux: `collectors\fulltext\scanner_queue.sh` | Planned |
 | `mysql.applicable` | boolean | Linux: `collectors\icewarp\mysql_server.sh` | Planned |
+| `mysql.host` | string | Linux: `collectors\icewarp\mysql_server.sh` | Planned |
+| `mysql.os_note` | string | Linux: `collectors\icewarp\mysql_server.sh` | Planned |
+| `mysql.os_version` | string | Linux: `collectors\icewarp\mysql_server.sh` | Planned |
+| `mysql.port_3306_listening` | number | Linux: `collectors\icewarp\mysql_server.sh` | Planned |
+| `mysql.scope` | string | Linux: `collectors\icewarp\mysql_server.sh` | Planned |
+| `mysql.service_active` | number | Linux: `collectors\icewarp\mysql_server.sh` | Planned |
+| `mysql.service_name` | string | Linux: `collectors\icewarp\mysql_server.sh` | Planned |
+| `mysql.version_raw` | string | Linux: `collectors\icewarp\mysql_server.sh` | Planned |
 
 ### 5.4 Health Evaluation
 
-| Schema key | Type | Planned Windows source / Linux reference | Status |
-|---|---|---|---|
-| `health.access.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.access.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.auto.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.auto.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.accounts.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.accounts.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.as.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.as.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.cache.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.cache.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.gw.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.gw.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.db.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.last_time.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.last_time.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.backup.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.cpu.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.cpu.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.database.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.database.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.digest_md5.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.digest_md5.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.directory_cache.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.directory_cache.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.disk.archive.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.disk.install.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.disk.mail.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.disk.overall.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.disk.overall.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.disk.root_fs.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.disk.root_fs.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.disk.root_home.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.login_blocking.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.login_blocking.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.mail_flow.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.mail_flow.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.memory.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.memory.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.monitor.enabled.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.monitor.enabled.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.monitoring.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.monitoring.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.os_update.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.os_update.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.password_policy.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.password_policy.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.resources.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.resources.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.summary.failed` | number | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.summary.overall` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.summary.total_checks` | number | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.summary.warnings` | number | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.threat.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.threat.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.tls.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.tls.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.tls_delivery.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.tls_delivery.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.control.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.control.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.gw.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.gw.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.im.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.im.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.interval.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.interval.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.pop3.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.pop3.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.smtp.message` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
-| `health.watchdog.smtp.result` | string | Derived: `lib/health.sh` `evaluate_health()` - not ported | Derived |
+The Windows evaluator in `windows/lib/Health.ps1` mirrors the Linux
+`lib/health.sh` rules and emits every `health.*` key below. Result values
+are `pass`, `warn`, `fail`, `critical`, `skip`, or `info`; summary totals
+are numbers and all other health values are strings.
 
+| Schema key | Type | Windows source / Linux reference | Status |
+|---|---|---|---|
+| `health.access.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.access.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.admin_email.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.admin_email.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.auto.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.auto.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.accounts.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.accounts.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.as.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.as.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.cache.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.cache.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.gw.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.gw.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.db.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.last_time.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.last_time.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.backup.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.cpu.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.cpu.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.database.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.database.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.digest_md5.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.digest_md5.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.directory_cache.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.directory_cache.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.disk.archive.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.disk.install.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.disk.mail.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.disk.overall.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.disk.overall.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.disk.root_fs.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.disk.root_fs.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.disk.root_home.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.intrusion.block_connections.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.intrusion.block_connections.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.intrusion.block_duration.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.intrusion.block_duration.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.login_blocking.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.login_blocking.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.mail_flow.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.mail_flow.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.memory.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.memory.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.monitor.enabled.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.monitor.enabled.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.monitoring.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.monitoring.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.os_update.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.os_update.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.password_policy.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.password_policy.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.resources.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.resources.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.service.imap.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.service.imap.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.service.pop3.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.service.pop3.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.session_timeout.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.session_timeout.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.summary.failed` | number | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.summary.overall` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.summary.total_checks` | number | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.summary.warnings` | number | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.threat.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.threat.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.tls.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.tls.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.tls_delivery.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.tls_delivery.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.control.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.control.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.gw.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.gw.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.im.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.im.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.interval.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.interval.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.pop3.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.pop3.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.smtp.message` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
+| `health.watchdog.smtp.result` | string | Windows: `windows/lib/Health.ps1`; Linux: `lib/health.sh` `evaluate_health()` | Implemented |
 ## 6. Dynamic key templates
 
-The schema sample contains concrete values, but four families are dynamic.
+The schema sample contains concrete values, but five families are dynamic.
 The Windows agent must emit one block per discovered value, using the same
 sanitization rules as the Linux collectors.
 
@@ -561,10 +585,11 @@ sanitization rules as the Linux collectors.
 | Storage | `storage.<label>.<field>` | Fixed labels: `root_fs`, `root_home`, `install`, `mail`, `archive`. Fields: `device`, `mount`, `path`, `status`, `total_gb`, `used_gb`, `free_gb`, `used_percent`. |
 | RBL zones | `security.rbl_self_check.zones.<zone>` | Dots become underscores (`zen.spamhaus.org` -> `zen_spamhaus_org`). |
 | Resolver hosts | `dns.resolver.external_test_ok_<host>` | Dots become underscores (`google.com` -> `google_com`). |
+| Health disk messages | `health.disk.<label>.message` | Fixed labels: `root_fs`, `root_home`, `install`, `mail`, `archive`. The sample only contains the first mount's message; the evaluator emits one per disk label. |
 
 ## 7. Corrections applied in the Windows implementation
 
-The Windows implementation now follows the Linux writer and the 411-key
+The Windows implementation now follows the Linux writer and the 432-key
 contract:
 
 - **Types:** `windows/lib/Json.ps1` sorts keys, turns empty strings into
@@ -603,7 +628,7 @@ contract:
 - **`smtp.max_message_size.mb`:** integral MB values are emitted without a
   trailing `.0`.
 
-Remaining work is the 163 schema keys listed as planned/derived in the
+Remaining work is the 92 schema keys listed as planned in the
 mapping above.
 ## 8. Verification
 
@@ -612,7 +637,7 @@ To verify this document against the schema:
 ```powershell
 $schema = (Get-Content -Raw C:\Users\mrkashi\Desktop\iceauto\health.json | ConvertFrom-Json)
 $keys = $schema.PSObject.Properties.Name
-$keys.Count  # must be 411
+$keys.Count  # must be 432
 ```
 
 To verify a collector run:
@@ -622,6 +647,8 @@ cd C:\Projects\icewarp-health-agent-windows\windows
 .\agent.ps1 -Report
 ```
 
-The generated `output\health.json` must contain the same keys as the schema.
-Dynamic keys are compared by template, not by the sample host name.
+The generated `output\health.json` must contain only schema keys with the
+correct JSON types. It contains the implemented subset (currently 340 key
+templates); the 92 planned keys are not emitted yet. Dynamic keys are compared
+by template, not by the sample host name.
 

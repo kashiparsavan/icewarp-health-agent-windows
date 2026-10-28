@@ -25,6 +25,10 @@ function Get-AgentConfig {
         ChecklistVersion        = '1.14'
         MailHostname            = ''
         MailDomain              = ''
+        MonitorDiskAlertMb            = 5120
+        MonitorCpuThresholdPercent    = 50
+        MonitorMemoryAlertKb          = 1048576
+        MonitorWebThreadpoolAlertSeconds = 300
     }
 
     $examplePath = Join-Path $Root 'config\agent.example.psd1'

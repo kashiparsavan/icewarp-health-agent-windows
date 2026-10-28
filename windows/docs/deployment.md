@@ -1,6 +1,6 @@
 # Windows Deployment
 
-This guide covers the 0.1.0 Windows scaffold. The agent is a console
+This guide covers the 0.1.2 Windows agent. The agent is a console
 PowerShell script; it is not installed as a Windows service yet.
 
 ## Prerequisites
@@ -115,7 +115,7 @@ this agent.
 | `windows\logs\` | Modify for the task account |
 
 `agent.local.psd1` contains site settings, but no credentials are required by
-the 0.1.0 scaffold. Do not add credentials to a tracked file. If future
+the 0.1.2 agent. Do not add credentials to a tracked file. If future
 collectors need secrets, use Windows Credential Manager or a protected
 configuration mechanism instead.
 
@@ -127,7 +127,7 @@ separate retention task or lower the run frequency.
 
 ## Updates
 
-Automatic updates are not implemented for Windows in 0.1.0. For a Git
+Automatic updates are not implemented for Windows in 0.1.2. For a Git
 checkout, update manually during a maintenance window:
 
 ```powershell

@@ -13,15 +13,15 @@ source the Linux lib/ directory.
 |---|---|
 | Platform | Windows |
 | Entry point | windows\agent.ps1 |
-| Version | 0.1.0 |
-| Status | Nine collectors; 248 of 411 schema keys implemented |
+| Version | 0.1.2 |
+| Status | Ten collectors plus health engine; 340 of 432 schema keys implemented |
 
 Configuration, logging, the IceWarp tool.exe wrapper, schema-compatible flat
-JSON output, DNS/SMTP/security/storage/license/backup collectors, and Pester
-contract tests are in place. 248 of the 411 Linux health.json keys are
-implemented; the remaining 163 are tracked in docs/api-key-mapping.md. PDF
-reports, health rules, the full 113-item checklist and automatic updates are
-not ported yet.
+JSON output, DNS/SMTP/security/storage/license/backup collectors, the full
+health evaluation engine, and Pester contract tests are in place. 340 of the
+432 Linux health.json keys are implemented; the remaining 92 are tracked in
+docs/api-key-mapping.md. PDF reports, the full 113-item checklist and
+automatic updates are not ported yet.
 
 ## Requirements
 
@@ -112,11 +112,13 @@ Example JSON:
 
 ```json
 {
-    "agent.version": "0.1.0",
+    "agent.version": "0.1.2",
     "general.technician": "Parsavan",
     "icewarp.version": "14.3.0.12",
     "icewarp.tool.available": true,
-    "collector.general.version": "ok"
+    "collector.general.version": "ok",
+    "health.summary.overall": "warn",
+    "health.summary.total_checks": 9
 }
 ```
 
@@ -187,9 +189,9 @@ Rules:
   continues with the remaining collectors.
 - Context exposes Config, Data, Root, and Version.
 
-Nine collectors ship in 0.1.0 (see `windows/README.md` collectors table):
+Ten collectors ship in 0.1.2 (see `windows/README.md` collectors table):
 General/Version plus Icewarp/BackupArchive, DnsMailFlow, DomainsUsers,
-License, OsStorage, Security, SmtpSettings, and ServiceStatus.
+License, Monitor, OsStorage, Security, SmtpSettings, and ServiceStatus.
 
 ## Tests
 
@@ -199,8 +201,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\tests\Run-Test
 
 The runner detects Pester 3.x or 5.x. The suite checks version loading, PSD1
 configuration, tool-output parsing, JSON types, collector success/failure
-handling, collector discovery, and collector filtering. The tests do not
-require a live IceWarp server.
+handling, collector discovery, collector filtering, the health checks,
+roll-ups and summary, and the Monitor collector. The tests do not require a
+live IceWarp server.
 
 ## Documentation
 
@@ -215,7 +218,7 @@ require a live IceWarp server.
 
 ## Updates
 
-Automatic updates are not implemented for Windows in 0.1.0. For a Git
+Automatic updates are not implemented for Windows in 0.1.2. For a Git
 checkout, update manually during a maintenance window:
 
 ```powershell

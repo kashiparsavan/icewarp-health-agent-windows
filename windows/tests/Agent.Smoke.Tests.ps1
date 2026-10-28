@@ -11,6 +11,7 @@ Describe 'Windows agent contract' {
         . (Join-Path $libRoot 'Config.ps1')
         . (Join-Path $libRoot 'IceWarpTool.ps1')
         . (Join-Path $libRoot 'Json.ps1')
+        . (Join-Path $libRoot 'Health.ps1')
 
         $schemaPath = Join-Path $script:testDirectory 'fixtures\schema-keys.json'
         $script:schema = Get-Content -LiteralPath $schemaPath -Raw | ConvertFrom-Json
@@ -77,6 +78,11 @@ Describe 'Windows agent contract' {
             if ($Key -match '^storage\.(root_fs|root_home|install|mail|archive)\.(device|mount|path|status|total_gb|used_gb|free_gb|used_percent)$') {
                 return $true
             }
+            # Disk message keys depend on which mounts share a device; the
+            # Linux sample only contains the first mount's message.
+            if ($Key -match '^health\.disk\.(root_fs|root_home|install|mail|archive)\.(result|message)$') {
+                return $true
+            }
             if ($Key -match '^security\.rbl_self_check\.zones\.(zen_spamhaus_org|bl_spamcop_net|dnsbl_sorbs_net|b_barracudacentral_org)$') {
                 return $true
             }
@@ -97,6 +103,7 @@ Describe 'Windows agent contract' {
             if ($Key -match '^domain\.') { return 'string' }
             if ($Key -match '^storage\..+\.(total_gb|used_gb|free_gb|used_percent)$') { return 'number' }
             if ($Key -match '^storage\.') { return 'string' }
+            if ($Key -match '^health\.disk\.') { return 'string' }
             if ($Key -match '^security\.rbl_self_check\.zones\.') { return 'string' }
             return 'string'
         }
@@ -283,7 +290,7 @@ Describe 'Windows agent contract' {
     }
 
     It 'reads the Windows agent version from VERSION' {
-        Assert-Equal -Expected '0.1.0' -Actual (Get-AgentVersion -Root $script:agentRoot)
+        Assert-Equal -Expected '0.1.2' -Actual (Get-AgentVersion -Root $script:agentRoot)
     }
 
     It 'loads the example PSD1 configuration and rejects unknown keys' {
@@ -545,12 +552,12 @@ Loading domains...
         Assert-True -Condition ($json.'domain.checked') -Because 'domain.checked should be a JSON true.'
     }
 
-    It 'has a 411-key schema fixture' {
-        Assert-Equal -Expected 411 -Actual ([int]($script:schema.key_count))
-        Assert-Equal -Expected 411 -Actual $script:schemaKeySet.Count
+    It 'has a 432-key schema fixture' {
+        Assert-Equal -Expected 432 -Actual ([int]($script:schema.key_count))
+        Assert-Equal -Expected 432 -Actual $script:schemaKeySet.Count
     }
 
-    It 'collector source contains no literal key outside the 411-key schema' {
+    It 'collector source contains no literal key outside the 432-key schema' {
         $files = @()
         $files += @(Get-ChildItem -LiteralPath (Join-Path $script:agentRoot 'collectors') -Recurse -File -Filter '*.ps1')
         $files += @(Get-ChildItem -LiteralPath (Join-Path $script:agentRoot 'lib') -File -Filter '*.ps1')
@@ -600,6 +607,8 @@ Loading domains...
                     '{0} failed: {1}' -f (Get-CollectorName -Root $script:agentRoot -Path $collector.FullName), $result.Message)
             }
 
+            Invoke-HealthEvaluation -Data $context.Data
+
             $path = Join-Path $script:tempRoot 'full.json'
             Write-AgentJson -Path $path -Data $context.Data
             $json = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
@@ -628,6 +637,12 @@ Loading domains...
             Assert-Equal -Expected 'boolean' -Actual (Get-JsonScalarType -Value $json.'security.port_9001_egress.blocked')
             Assert-Equal -Expected 'boolean' -Actual (Get-JsonScalarType -Value $json.'icewarp.license.seats_info_available')
             Assert-Equal -Expected 'mtitc.ir;' -Actual $json.'domain.list'
+
+            $healthKeys = @($actualKeys | Where-Object { $_ -like 'health.*' })
+            Assert-True -Condition ($healthKeys.Count -ge 72) -Because (
+                'Expected the full health block, got {0} health keys.' -f $healthKeys.Count)
+            Assert-Equal -Expected 'string' -Actual (Get-JsonScalarType -Value $json.'health.summary.overall')
+            Assert-Equal -Expected 'number' -Actual (Get-JsonScalarType -Value $json.'health.summary.total_checks')
         } finally {
             $env:SystemDrive = $savedSystemDrive
         }
@@ -797,5 +812,241 @@ Loading domains...
         $response2 = Read-SmtpResponse -Reader $reader2
         Assert-Equal -Expected $false -Actual $response2.SupportsStartTls
         Assert-Equal -Expected $false -Actual (Test-SmtpStartTls -Server '' -TimeoutSeconds 1)
+    }
+
+    It 'evaluates OS update age and missing dates' {
+        $data = [ordered]@{}
+        $data['os.last_update_date'] = (Get-Date).AddDays(-2).ToString('yyyy-MM-dd')
+        Invoke-HealthOsUpdateCheck -Data $data
+        Assert-Equal -Expected 'pass' -Actual $data['health.os_update.result']
+
+        $data['os.last_update_date'] = (Get-Date).AddDays(-14).ToString('yyyy-MM-dd')
+        Invoke-HealthOsUpdateCheck -Data $data
+        Assert-Equal -Expected 'warn' -Actual $data['health.os_update.result']
+
+        $data['os.last_update_date'] = (Get-Date).AddDays(-45).ToString('yyyy-MM-dd')
+        Invoke-HealthOsUpdateCheck -Data $data
+        Assert-Equal -Expected 'critical' -Actual $data['health.os_update.result']
+
+        $data['os.last_update_date'] = ''
+        Invoke-HealthOsUpdateCheck -Data $data
+        Assert-Equal -Expected 'skip' -Actual $data['health.os_update.result']
+    }
+
+    It 'evaluates MySQL, SQLite and unknown database platforms' {
+        $data = [ordered]@{ 'database.type' = 'mysql' }
+        Invoke-HealthDatabaseCheck -Data $data
+        Assert-Equal -Expected 'pass' -Actual $data['health.database.result']
+
+        $data['database.type'] = 'sqlite'
+        Invoke-HealthDatabaseCheck -Data $data
+        Assert-Equal -Expected 'warn' -Actual $data['health.database.result']
+
+        $data['database.type'] = ''
+        Invoke-HealthDatabaseCheck -Data $data
+        Assert-Equal -Expected 'warn' -Actual $data['health.database.result']
+        Assert-True -Condition ($data['health.database.message'] -like '*(unknown/empty)*')
+
+        $data['database.type'] = 'postgres'
+        Invoke-HealthDatabaseCheck -Data $data
+        Assert-True -Condition ($data['health.database.message'] -like '*Unrecognised database type*')
+    }
+
+    It 'evaluates mail-flow DNS and STARTTLS checks' {
+        $data = [ordered]@{
+            'dns.spf.found'              = 'true'
+            'dns.dkim.found'             = 'true'
+            'dns.dmarc.found'            = 'true'
+            'dns.ptr.exists'             = 'true'
+            'dns.ptr.matches_hostname'   = 'true'
+            'smtp.starttls_live_test'    = 'true'
+            'dns.lookup_test.ok'         = 'true'
+            'security.rbl_self_check.zones.zen_spamhaus_org' = 'clean'
+            'security.rbl_self_check.zones.bl_spamcop_net' = 'clean'
+        }
+        Invoke-HealthMailFlowCheck -Data $data
+        Assert-Equal -Expected 'pass' -Actual $data['health.mail_flow.result']
+
+        # DNSBL zones: absent, then present without a recommended zone, then
+        # with a recommended zone. The check uses the schema's per-zone keys.
+        $data.Remove('security.rbl_self_check.zones.zen_spamhaus_org')
+        $data.Remove('security.rbl_self_check.zones.bl_spamcop_net')
+        Invoke-HealthMailFlowCheck -Data $data
+        Assert-Equal -Expected 'warn' -Actual $data['health.mail_flow.result']
+        Assert-True -Condition ($data['health.mail_flow.message'] -like '*No DNSBL zones configured*')
+
+        $data['security.rbl_self_check.zones.dnsbl_sorbs_net'] = 'clean'
+        Invoke-HealthMailFlowCheck -Data $data
+        Assert-Equal -Expected 'warn' -Actual $data['health.mail_flow.result']
+        Assert-True -Condition ($data['health.mail_flow.message'] -like '*missing recommended*')
+
+        $data['security.rbl_self_check.zones.zen_spamhaus_org'] = 'clean'
+        Invoke-HealthMailFlowCheck -Data $data
+        Assert-Equal -Expected 'pass' -Actual $data['health.mail_flow.result']
+
+        $data['dns.ptr.matches_hostname'] = 'false'
+        Invoke-HealthMailFlowCheck -Data $data
+        Assert-Equal -Expected 'warn' -Actual $data['health.mail_flow.result']
+        Assert-True -Condition ($data['health.mail_flow.message'] -like '*PTR does not match*')
+
+        $data['dns.ptr.matches_hostname'] = 'true'
+        $data['dns.spf.includes_server_ip'] = 'false'
+        Invoke-HealthMailFlowCheck -Data $data
+        Assert-Equal -Expected 'warn' -Actual $data['health.mail_flow.result']
+        Assert-True -Condition ($data['health.mail_flow.message'] -like '*SPF does not include*')
+
+        $data['dns.spf.found'] = 'false'
+        Invoke-HealthMailFlowCheck -Data $data
+        Assert-Equal -Expected 'fail' -Actual $data['health.mail_flow.result']
+        Assert-True -Condition ($data['health.mail_flow.message'] -like '*SPF record*')
+
+        $empty = [ordered]@{}
+        Invoke-HealthMailFlowCheck -Data $empty
+        Assert-Equal -Expected 'skip' -Actual $empty['health.mail_flow.result']
+    }
+
+    It 'evaluates IMAP/POP3 and session-timeout rules' {
+        $data = [ordered]@{
+            'service.imap.active'          = '1'
+            'service.pop3.active'          = 'true'
+            'icewarp.session_timeout_minutes' = '30'
+        }
+        Invoke-HealthImapPop3Check -Data $data
+        Invoke-HealthSessionTimeoutCheck -Data $data
+        Assert-Equal -Expected 'pass' -Actual $data['health.service.imap.result']
+        Assert-Equal -Expected 'pass' -Actual $data['health.service.pop3.result']
+        Assert-Equal -Expected 'pass' -Actual $data['health.session_timeout.result']
+
+        $data['service.imap.active'] = '0'
+        $data['service.pop3.active'] = 'false'
+        $data['icewarp.session_timeout_minutes'] = '0'
+        Invoke-HealthImapPop3Check -Data $data
+        Invoke-HealthSessionTimeoutCheck -Data $data
+        Assert-Equal -Expected 'warn' -Actual $data['health.service.imap.result']
+        Assert-Equal -Expected 'warn' -Actual $data['health.service.pop3.result']
+        Assert-Equal -Expected 'warn' -Actual $data['health.session_timeout.result']
+    }
+
+    It 'rolls up nine executive pillars and computes the summary' {
+        $data = [ordered]@{
+            'os.memory.total_kb' = '8388608'
+            'os.memory.available_kb' = '6291456'
+            'os.cpu.load1' = '1.00'
+            'os.cpu.count' = '4'
+            'monitor.cpu.threshold_percent' = '50'
+            'monitor.disk.alert_below_mb' = '5120'
+            'storage.root_fs.free_gb' = '100'
+            'storage.root_fs.total_gb' = '200'
+            'storage.root_fs.used_percent' = '50'
+            'storage.root_fs.device' = 'C:'
+            'storage.root_fs.mount' = 'C:'
+            'icewarp.backup.auto_enabled' = '1'
+            'icewarp.backup.last_time' = (Get-Date).AddDays(-1).ToString('yyyy-MM-dd HH:mm:ss')
+            'backup.db.accounts.enabled' = '1'
+            'backup.db.as.enabled' = '1'
+            'backup.db.gw.enabled' = '1'
+            'backup.db.cache.enabled' = '1'
+            'security.password_policy.active' = '1'
+            'security.password_policy.min_length' = '8'
+            'security.login.policy_enabled' = '1'
+            'security.login.max_failed_attempts' = '5'
+            'smtp.use_tls_ssl' = '1'
+            'security.digest_md5.enabled' = 'false'
+            'security.intrusion.block_connections_per_minute.value' = '50'
+            'security.intrusion.block_duration_minutes' = '360'
+            'monitor.alert_email' = 'admin@example.com'
+            'watchdog.control' = '1'
+            'watchdog.smtp' = '1'
+            'watchdog.pop3' = '1'
+            'watchdog.im' = '1'
+            'watchdog.gw' = '1'
+            'watchdog.interval_minutes' = '0'
+            'monitor.enabled' = '1'
+            'monitor.memory.alert_below_kb' = '1048576'
+            'os.last_update_date' = (Get-Date).AddDays(-2).ToString('yyyy-MM-dd')
+            'directory_cache.schedule_raw' = '0 2 * * *'
+            'icewarp.session_timeout_minutes' = '30'
+            'service.imap.active' = '1'
+            'service.pop3.active' = '1'
+            'database.type' = 'mysql'
+            'dns.spf.found' = 'true'
+            'dns.dkim.found' = 'true'
+            'dns.dmarc.found' = 'true'
+            'dns.ptr.exists' = 'true'
+            'dns.ptr.matches_hostname' = 'true'
+            'smtp.starttls_live_test' = 'true'
+            'dns.lookup_test.ok' = 'true'
+            'icewarp.ssl.days_left' = '120'
+            'icewarp.antispam.last_update' = (Get-Date).AddDays(-2).ToString('yyyy-MM-dd')
+            'icewarp.antivirus.last_update' = (Get-Date).AddDays(-2).ToString('yyyy-MM-dd')
+            'security.rbl_self_check.checked' = 'false'
+            'security.rbl_self_check.zones.zen_spamhaus_org' = 'clean'
+            'security.rbl_self_check.zones.bl_spamcop_net' = 'clean'
+            'security.cyren_folder.status' = 'OK'
+        }
+
+        Invoke-HealthEvaluation -Data $data
+
+        foreach ($pillar in @('backup', 'mail_flow', 'tls', 'access', 'threat', 'resources', 'os_update', 'monitoring', 'database')) {
+            Assert-Equal -Expected 'pass' -Actual $data[('health.{0}.result' -f $pillar)] -Because ('Pillar {0} should pass.' -f $pillar)
+        }
+        Assert-Equal -Expected 'pass' -Actual $data['health.summary.overall']
+        Assert-Equal -Expected '9' -Actual $data['health.summary.total_checks']
+        Assert-Equal -Expected '0' -Actual $data['health.summary.failed']
+        Assert-Equal -Expected '0' -Actual $data['health.summary.warnings']
+
+        # A critical memory result must fail the resources pillar and the
+        # executive summary while leaving the other eight pillars counted.
+        $data['os.memory.available_kb'] = '100'
+        Invoke-HealthEvaluation -Data $data
+        Assert-Equal -Expected 'critical' -Actual $data['health.memory.result']
+        Assert-Equal -Expected 'fail' -Actual $data['health.resources.result']
+        Assert-Equal -Expected 'fail' -Actual $data['health.summary.overall']
+        Assert-Equal -Expected '9' -Actual $data['health.summary.total_checks']
+        Assert-Equal -Expected '1' -Actual $data['health.summary.failed']
+        Assert-Equal -Expected '0' -Actual $data['health.summary.warnings']
+    }
+
+    It 'Monitor collector emits schema monitor keys and falls back to the domain admin email' {
+        . $script:mockFunctions
+
+        $config = Get-AgentConfig -Root $script:agentRoot
+        $config.LogDirectory = Join-Path $script:tempRoot 'logs'
+        $context = Initialize-AgentContext -Root $script:agentRoot -Config $config -Version '0.1.0'
+        $collectorPath = Join-Path $script:agentRoot 'collectors\Icewarp\Monitor.ps1'
+
+        $data = & $collectorPath -Context $context
+        foreach ($key in @(
+            'monitor.enabled',
+            'monitor.alert_email',
+            'monitor.disk.alert_below_mb',
+            'monitor.cpu.threshold_percent',
+            'monitor.cpu.threshold_minutes',
+            'monitor.memory.alert_below_kb',
+            'monitor.memory.alert_below_gb',
+            'monitor.web_threadpool.alert_seconds'
+        )) {
+            Assert-True -Condition $data.Contains($key) -Because ('Monitor collector missing {0}.' -f $key)
+            Assert-True -Condition (Test-SchemaKeyAllowed -Key $key) -Because ('Monitor emitted non-schema key {0}.' -f $key)
+        }
+        Assert-Equal -Expected '1' -Actual $data['monitor.enabled']
+        Assert-Equal -Expected '0' -Actual $data['monitor.cpu.threshold_percent']
+
+        $global:AgentTestSettingOverrides['C_System_Tools_Monitor_ReportAddress'] = ''
+        $global:AgentTestSettingOverrides['C_System_Tools_Monitor_FreeMem'] = ''
+        $global:AgentTestSettingOverrides['C_System_Tools_Monitor_DiskSize'] = ''
+        $global:AgentTestSettingOverrides['C_System_Tools_Monitor_CPUUsagePerc'] = ''
+        $global:AgentTestSettingOverrides['C_System_Tools_Monitor_WebThreadPoolThreshold'] = ''
+        function Get-IceWarpDomainSetting {
+            param([string]$Domain, [string]$Name, [hashtable]$Context)
+            return 'admin@example.com'
+        }
+
+        $fallback = & $collectorPath -Context $context
+        Assert-Equal -Expected 'admin@example.com' -Actual $fallback['monitor.alert_email']
+        Assert-Equal -Expected '1048576' -Actual $fallback['monitor.memory.alert_below_kb']
+        Assert-Equal -Expected '5120' -Actual $fallback['monitor.disk.alert_below_mb']
+        Assert-Equal -Expected '50' -Actual $fallback['monitor.cpu.threshold_percent']
+        Assert-Equal -Expected '300' -Actual $fallback['monitor.web_threadpool.alert_seconds']
     }
 }

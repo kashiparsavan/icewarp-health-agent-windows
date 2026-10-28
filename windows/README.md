@@ -4,12 +4,13 @@ This directory contains an independent Windows implementation of the IceWarp
 Health Agent. It is written for **Windows PowerShell 5.1** and does not use
 Bash, `agent.sh`, or any file under the Linux `lib/` directory.
 
-Current status: **0.1.0, nine collectors**. Configuration, logging,
-the `tool.exe` wrapper, schema-compatible flat JSON output, DNS/SMTP/security/
-storage/license/backup collectors, and Pester contract tests are in place.
-248 of the 411 Linux `health.json` keys are implemented; the remaining 163 are
-tracked in `docs/api-key-mapping.md`. PDF reports, health rules, the full
-113-item checklist and automatic updates are not ported yet.
+Current status: **0.1.2, ten collectors plus the health engine**.
+Configuration, logging, the `tool.exe` wrapper, schema-compatible flat JSON
+output, DNS/SMTP/security/storage/license/backup collectors, the health
+evaluation engine, and Pester contract tests are in place. 340 of the 432
+Linux `health.json` keys are implemented; the remaining 92 are tracked in
+`docs/api-key-mapping.md`. PDF reports, the full 113-item checklist and
+automatic updates are not ported yet.
 
 ## Requirements
 
@@ -81,11 +82,15 @@ Relative paths are resolved against the `windows/` directory.
 | `ToolTimeoutSeconds` | `10` | Per-call timeout for `tool.exe` |
 | `OutputJson` | `output\health.json` | Flat JSON output path |
 | `LogDirectory` | `logs` | Runtime log directory |
+| `MonitorDiskAlertMb` | `5120` | Disk free-space warning threshold (MB) |
+| `MonitorCpuThresholdPercent` | `50` | CPU load warning threshold (percent) |
+| `MonitorMemoryAlertKb` | `1048576` | Free-memory warning threshold (KB) |
+| `MonitorWebThreadpoolAlertSeconds` | `300` | Web thread-pool warning threshold (seconds) |
 | `CompanyName` | empty | Company name for reports |
 | `Technician` | `Parsavan` | Technician name for reports |
 | `ChecklistVersion` | `1.14` | Report metadata label |
-| `MailHostname` | empty | Reserved for future DNS collectors |
-| `MailDomain` | empty | Reserved for future DNS/DMARC collectors |
+| `MailHostname` | empty | Mail hostname for SPF/DKIM/DMARC and STARTTLS checks |
+| `MailDomain` | empty | Fallback mail domain for DNS checks |
 
 Do not copy the Linux `config/*.conf` files into this directory. The Windows
 agent intentionally has a separate, PSD1-only configuration.
@@ -103,11 +108,13 @@ Example JSON:
 
 ```json
 {
-    "agent.version": "0.1.0",
+    "agent.version": "0.1.2",
     "agent.platform": "windows",
     "icewarp.version": "14.3.0.12",
     "icewarp.tool.available": true,
-    "collector.general.version": "ok"
+    "collector.general.version": "ok",
+    "health.summary.overall": "warn",
+    "health.summary.total_checks": 9
 }
 ```
 
@@ -148,13 +155,19 @@ Rules:
 
 | Collector | Checklist items | Description |
 |---|---|---|
-| General/Version | IceWarp Version | C_Version, C_NiceVersion, OS details |
-| Icewarp/ServiceStatus | Process SMTP, Process POP3/IMAP | Service ports and startup mode |
-| Icewarp/License | IceWarp Expiration Date | License status, type, trial expiration |
+| General/Version | IceWarp Version | `C_Version`, `C_NiceVersion`, OS details |
+| Icewarp/BackupArchive | Backup configuration | System/database backups and last-run timestamp |
+| Icewarp/DnsMailFlow | SPF, DKIM, DMARC, PTR, DNS, STARTTLS | DNS records and live SMTP STARTTLS probe |
 | Icewarp/DomainsUsers | Daily Send Email limit, Disk Quota | Auto-discovered domain limits |
+| Icewarp/License | IceWarp Expiration Date | License status, type, trial expiration |
+| Icewarp/Monitor | System Monitor | Monitor enable flag, report address, CPU/RAM/disk thresholds |
+| Icewarp/OsStorage | OS update, memory, CPU, storage | OS update date, memory/CPU load, storage paths and usage |
+| Icewarp/Security | Password, login, TLS, DIGEST-MD5, RBL | Security policy, ports, RBL and Cyren folder status |
+| Icewarp/ServiceStatus | Process SMTP, Process POP3/IMAP | Service ports and startup mode |
+| Icewarp/SmtpSettings | SMTP settings | SMTP ports, limits, TLS and message-size settings |
 
 `General/Version` reads `C_Version` and `C_NiceVersion` and adds basic
-operating-system fields; all nine collectors are listed in the table above.
+operating-system fields; all ten collectors are listed in the table above.
 
 ## API Reference
 
@@ -216,8 +229,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-Tests.ps1
 
 The runner detects Pester 3.x or 5.x. The suite checks version loading, PSD1
 configuration, tool-output parsing, JSON types, collector success/failure
-isolation, collector discovery, and `-Only` filtering. It does not require a
-live IceWarp server.
+isolation, collector discovery, `-Only` filtering, the health checks,
+roll-ups and summary, and the Monitor collector. It does not require a live
+IceWarp server.
 
 ## Deployment
 
@@ -229,11 +243,11 @@ service-account guidance, log handling, and troubleshooting.
 - Windows files are additive under `windows/`; Linux paths at the repository
   root are unchanged.
 - `windows/VERSION` is independent of the root Linux `VERSION`.
-- Use Windows tags such as `windows-v0.1.0`; Linux releases continue to use
+- Use Windows tags such as `windows-v0.1.2`; Linux releases continue to use
   `v*`.
 - The Linux auto-updater follows `origin/main`. It does not run the Windows
   agent, and the Windows scaffold does not call the Linux updater.
-- Automatic updates for Windows are not implemented in 0.1.0.
+- Automatic updates for Windows are not implemented in 0.1.2.
 
 For repository-wide context, see the root [`README.md`](../README.md) and
 [`CLAUDE.md`](../CLAUDE.md).

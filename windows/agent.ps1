@@ -45,7 +45,7 @@ $ErrorActionPreference = 'Stop'
 $script:AgentRoot = $PSScriptRoot
 $script:ProjectRoot = Split-Path -Parent $script:AgentRoot
 $libRoot = Join-Path $script:AgentRoot 'lib'
-$requiredLibraries = @('Common.ps1', 'Logging.ps1', 'Config.ps1', 'IceWarpTool.ps1', 'Json.ps1')
+$requiredLibraries = @('Common.ps1', 'Logging.ps1', 'Config.ps1', 'IceWarpTool.ps1', 'Json.ps1', 'Health.ps1')
 
 foreach ($library in $requiredLibraries) {
     $libraryPath = Join-Path $libRoot $library
@@ -112,6 +112,14 @@ try {
                 -TimeoutSeconds ([int]$config.CollectorTimeoutSeconds)
         }
         $collectorResults = @($collectorResults)
+
+        Write-AgentLog -Level INFO -Message 'Evaluating health rules.'
+        Invoke-HealthEvaluation -Data $context.Data
+        Write-AgentLog -Level INFO -Message ('Health summary: {0} (failed={1}, warnings={2}, checks={3}).' -f
+            $context.Data['health.summary.overall'],
+            $context.Data['health.summary.failed'],
+            $context.Data['health.summary.warnings'],
+            $context.Data['health.summary.total_checks'])
 
         Write-AgentJson -Path $config.OutputJson -Data $context.Data
 
