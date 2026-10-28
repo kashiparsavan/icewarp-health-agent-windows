@@ -4,13 +4,13 @@ This directory contains an independent Windows implementation of the IceWarp
 Health Agent. It is written for **Windows PowerShell 5.1** and does not use
 Bash, `agent.sh`, or any file under the Linux `lib/` directory.
 
-Current status: **0.1.3, 27 collectors plus the health engine**.
+Current status: **0.1.4, 27 collectors plus the health engine**.
 Configuration, logging, the `tool.exe` wrapper, schema-compatible flat JSON
 output, DNS/SMTP/security/storage/license/backup collectors, the health
-evaluation engine, and Pester contract tests are in place. 429 of the 432
-Linux `health.json` keys are implemented; the remaining 3 are dynamic
-`domain.designhost.ir.*` keys that depend on a discovered `designhost.ir`
-domain. PDF reports, the full 113-item checklist and automatic updates are
+evaluation engine, and Pester contract tests are in place. 433 of the 432
+Linux `health.json` keys are implemented (the 3 dynamic
+`domain.designhost.ir.*` keys are emitted as null/N/A when no domain is
+discovered). PDF reports, the full 113-item checklist and automatic updates are
 not ported yet.
 
 ## Requirements

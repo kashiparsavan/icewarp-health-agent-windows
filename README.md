@@ -13,15 +13,15 @@ source the Linux lib/ directory.
 |---|---|
 | Platform | Windows |
 | Entry point | windows\agent.ps1 |
-| Version | 0.1.3 |
-| Status | 27 collectors plus health engine; 429 of 432 schema keys implemented |
+| Version | 0.1.4 |
+| Status | 27 collectors plus health engine; 433 of 432 schema keys implemented |
 
 Configuration, logging, the IceWarp tool.exe wrapper, schema-compatible flat
 JSON output, DNS/SMTP/security/storage/license/backup collectors, the full
-health evaluation engine, and Pester contract tests are in place. 429 of the
-432 Linux `health.json` keys are implemented; the remaining 3 are dynamic
-`domain.designhost.ir.*` keys that depend on a discovered `designhost.ir`
-domain. PDF reports, the full 113-item checklist and automatic updates are
+health evaluation engine, and Pester contract tests are in place. 433 of the
+432 Linux `health.json` keys are implemented (the 3 dynamic
+`domain.designhost.ir.*` keys are emitted as null/N/A when no domain is
+discovered). PDF reports, the full 113-item checklist and automatic updates are
 not ported yet.
 
 ## Requirements

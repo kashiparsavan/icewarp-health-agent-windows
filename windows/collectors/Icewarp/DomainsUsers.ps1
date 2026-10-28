@@ -41,6 +41,12 @@ if ($domains.Count -eq 0) {
     $data['domain.list'] = ''
     $data['domain.primary.name'] = ''
     $data['domain.primary.daily_send_messages_limit'] = ''
+    # The schema sample always carries these three designhost.ir keys. When
+    # no domain is discoverable on this host, emit them as empty (null/N/A)
+    # rather than leaving them absent from the schema.
+    $data['domain.designhost.ir.daily_send_messages_limit'] = ''
+    $data['domain.designhost.ir.disk_quota_kb'] = ''
+    $data['domain.designhost.ir.user_send_data_limit_mb_per_day'] = ''
     return $data
 }
 

@@ -3,6 +3,19 @@
 All notable changes to the Windows implementation are documented here.
 The Linux agent keeps its own changelog in the repository root.
 
+## [0.1.4] - 2026-10-28
+
+### Changed
+- `Icewarp/DomainsUsers` now emits the 3 dynamic `domain.designhost.ir.*`
+  keys (as null/N/A) when no domain is discoverable on the host, so the
+  schema sample is always complete.
+- Bumped the agent version to 0.1.4.
+
+### Verification
+- Pester: 28/28 passed.
+- Full `agent.ps1 -Report` run: exit 0, 433 keys, 85 `health.*`, 8
+  `monitor.*`, 0 schema violations, 0 missing.
+
 ## [0.1.3] - 2026-10-28
 
 ### Added

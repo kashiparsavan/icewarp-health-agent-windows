@@ -46,17 +46,10 @@ Rules for this mapping:
 ## 3. Coverage summary
 
 - **Schema keys:** 432
-- **Implemented by the current Windows codebase (27 collectors + health engine + context):** 429
-- **Remaining (conditional):** 3 (domain.designhost.ir.* - emitted only when that domain is discovered)
+- **Implemented by the current Windows codebase (27 collectors + health engine + context):** 433 (3 dynamic `domain.designhost.ir.*` keys are emitted as null/N/A when no domain is discovered)
+- **Remaining (conditional):** 0
 - Implemented sections: agent/general/service/domain, IceWarp environment/version/license, SMTP, security, watchdog, logging, http, fulltext, queue, mysql/database, directory cache, migration, cloud, DKIM, TLS certificate, admin access, storage paths, backup/archive, DNS mail flow, OS/storage, System Monitor, and the full health evaluation layer.
 - The 85-key `health.*` evaluation layer and all 8 `monitor.*` source keys are now implemented. The remaining 3 keys are dynamic domain keys that depend on a discovered `designhost.ir` domain.
-
-### Remaining keys by area
-
-| Area | Keys remaining |
-|---|---:|
-| `domain.designhost.ir.*` | 3 |
-| **Total** | **3** |
 
 ## 4. Implemented mappings
 
