@@ -759,7 +759,14 @@ function Invoke-HealthOsUpdateCheck {
 
     if (-not (Test-HealthMissing -Value $lastUpdate)) {
         $days = Get-DaysAgo -DateString $lastUpdate
-        if ($days -le 7) {
+        # Get-DaysAgo returns 999 when the date cannot be parsed. On Windows
+        # the value comes from Win32_QuickFixEngineering and is always a real
+        # date, but a bogus/foreign value must never be treated as "outdated"
+        # (which would mark the check CRITICAL). Treat an unparseable date as
+        # not-available rather than as a 999-day-old system.
+        if ($days -eq 999) {
+            Set-HealthResult -Name 'os_update' -Result 'skip' -Message 'OS last update date not available' -Data $Data
+        } elseif ($days -le 7) {
             Set-HealthResult -Name 'os_update' -Result 'pass' -Message ('OS updated recently ({0} days ago)' -f $days) -Data $Data
         } elseif ($days -le 30) {
             Set-HealthResult -Name 'os_update' -Result 'warn' -Message ('OS update is {0} days old (consider updating within a week)' -f $days) -Data $Data

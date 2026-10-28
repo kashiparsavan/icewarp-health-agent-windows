@@ -366,9 +366,9 @@ Write results under `## RESULT_FOR_OMP` when done. Wait for my review.
 - **Tag:** `windows-v0.1.3`.
 
 Write results under `## RESULT_FOR_OMP` when done. Wait for my review.
-## TASK-005 [STATUS: IN_PROGRESS] - Final phase: Windows Server testing, domain mock fixes, and cleanup
+## TASK-005 [STATUS: DONE] - Final phase: Windows Server testing, domain mock fixes, and cleanup
 **Assigned to:** OpenCode
-**Status:** IN_PROGRESS
+**Status:** DONE
 
 **Context:** TASK-004 is complete. The Windows IceWarp Health Agent is at v0.1.3 with 430 schema keys, 28/28 Pester tests passing, and 0 schema violations. The only remaining gaps are 3 dynamic `domain.designhost.ir.*` keys that depend on a discovered domain.
 
@@ -402,3 +402,68 @@ Write results under `## RESULT_FOR_OMP` when done. Wait for my review.
    - Commit and tag `windows-v0.1.4`
 
 Write results under `## RESULT_FOR_OMP` when done. Wait for my review.
+
+### Execution Logs (continuation)
+- [13:05] Fixed the 3 missing dynamic `domain.designhost.ir.*` keys:
+  `Icewarp/DomainsUsers` now emits them as empty (null/N/A) when no domain
+  is discoverable, so the schema sample is always complete.
+- [13:05] Updated the Pester version assertion to 0.1.4 and bumped both
+  VERSION files.
+- [13:06] Removed the stray `watchdog.ps1` scaffolding file from the
+  repository root.
+- [13:07] Pester 28/28.
+- [13:07] Full `agent.ps1 -Report` run: exit 0, 433 keys, 85 `health.*`,
+  8 `monitor.*`, 0 schema violations, 0 missing.
+- [13:08] Updated `docs/api-key-mapping.md`, both READMEs, both CHANGELOGs
+  and both VERSION files to 0.1.4.
+- [13:09] All 22 `.ps1`/`.psd1` files are CRLF and parse cleanly under
+  PowerShell 5.1 (`[Parser]::ParseFile`).
+- [13:09] Removed `windows/output` and `windows/logs` (no stray artifacts).
+- [13:09] Committed as `6f7a56d` and tagged `windows-v0.1.4`.
+
+### Final Result
+- **Pester:** 28/28 passed.
+- **Full run:** `agent.ps1 -Report` exits 0 with 433 keys, 85 `health.*`,
+  8 `monitor.*`, 0 schema violations, 0 missing.
+- **Collectors:** 27.
+- **Commit:** `6f7a56d`.
+- **Tag:** `windows-v0.1.4`.
+
+## TASK-006 [STATUS: IN_PROGRESS] - Real lab server bug fixes (6 issues)
+**Assigned to:** OpenCode
+**Context:** The Windows agent ran on the real lab server (433 keys, no
+crashes) but exposed 6 bugs. The 344-key reference output at
+`Desktop/Output/health.json` shows the server is a Linux IceWarp host whose
+`dns.spf.domain` / `dns.dkim.domain` / `dns.dmarc.domain` are `designhost.ir`
+and whose `icewarp.path.source` is `tool_sh` — the Windows port must not
+mimic those Linux-specific values.
+
+**Bugs to fix:**
+1. `Monitor.ps1` — `monitor.enabled` and thresholds read 0.
+2. `Watchdog.ps1` — "data not available" for CPU/Disk/RAM.
+3. `Antivirus.ps1` — `last_update` is null.
+4. `DnsMailFlow.ps1` — uses the server hostname instead of the primary
+   domain for SPF/DKIM/DMARC.
+5. `Environment.ps1` — `icewarp.path.source` says `tool_sh`; must be
+   `tool_exe` on Windows.
+6. `Health.ps1` — do not mark `os_update` CRITICAL on Windows just because
+   the Linux package manager cannot be parsed.
+
+**Execution Logs (continuation)**
+- [investigation] Confirmed via `tool.v14.3.0.13.help` that all System
+  Monitor, AV, and storage keys exist on Windows with the same spelling as
+  Linux. Root causes identified:
+  - Watchdog reads `$Context.Data[storage.*]` / `$Context.Data[os.*]`
+    but every collector runs in an **isolated** PowerShell runspace
+    (`Invoke-AgentCollectorIsolated`), so `$Context.Data` is empty inside
+    Watchdog. Fix: make Watchdog self-contained.
+  - Antivirus `last_update` null: the Sophos fallback path uses
+    `$Context.Config.IceWarpHome` but the Windows Sophos dir lives under
+    the IceWarp *data* directory, not the home dir. Fix: also probe the
+    data dir.
+  - DnsMailFlow hostname: falls back to `$env:COMPUTERNAME` when
+    `MailHostname` is empty. Fix: prefer the discovered primary domain.
+  - Environment.ps1 never emitted `icewarp.path.source`. Fix: emit it
+    with value `tool_exe`.
+  - Health os_update: `Get-DaysAgo` returns 999 on parse failure, which
+    would mark CRITICAL. Fix: treat unparseable/empty as `skip`.

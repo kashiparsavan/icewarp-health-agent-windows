@@ -28,7 +28,9 @@ $toolTemp = (Get-IceWarpSetting -Name 'C_System_Storage_Dir_TempPath' -Context $
 $toolLogs = (Get-IceWarpSetting -Name 'C_System_Storage_Dir_LogPath' -Context $Context)
 $toolArchive = (Get-IceWarpSetting -Name 'C_System_Tools_AutoArchive_Path' -Context $Context)
 
-$source = if ([string]::IsNullOrEmpty($toolMail)) { 'config_default' } else { 'tool_sh' }
+# On Windows the paths are read through tool.exe, so the source is always
+# tool_exe. (Linux uses tool.sh and reports tool_sh.)
+$source = if ([string]::IsNullOrEmpty($toolMail)) { 'config_default' } else { 'tool_exe' }
 
 $data['icewarp.path.mail'] = if ([string]::IsNullOrEmpty($toolMail)) { $defaultMail } else { $toolMail }
 $data['icewarp.path.temp'] = if ([string]::IsNullOrEmpty($toolTemp)) { $defaultTemp } else { $toolTemp }

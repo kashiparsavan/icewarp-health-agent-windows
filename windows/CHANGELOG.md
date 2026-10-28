@@ -1,4 +1,40 @@
-# Changelog - IceWarp Health Agent for Windows
+
+## [0.1.5] - 2026-10-28
+
+### Fixed
+
+- Watchdog.ps1: the watchdog CPU/Disk/RAM/OS-update summaries were
+  computed from $Context.Data, but every collector runs in an isolated
+  PowerShell runspace, so those keys were never present and the summaries
+  always reported "data not available". The summaries are now computed
+  directly from the local system
+  (Win32_Processor, Win32_LogicalDisk, Win32_OperatingSystem,
+  Win32_QuickFixEngineering).
+- Watchdog.ps1: the CPU percentage was double-counted
+  (LoadPercentage / cores * 100). Win32_Processor.LoadPercentage is
+  already a 0-100 percentage, so it is now used directly.
+- Antivirus.ps1: last_update was null on Windows because the Sophos
+  fallback only probed the IceWarp home directory. The Sophos directory is
+  now searched in several candidate locations
+  (IceWarpHome/sophos, APPDATA/IceWarp/sophos,
+  PROGRAMDATA/IceWarp/sophos, USERPROFILE/IceWarp/sophos).
+- DnsMailFlow.ps1: SPF/DKIM/DMARC now prefer the configured primary
+  IceWarp domain (MailHostname / MailDomain / discovered first domain)
+  instead of falling back to the server hostname, which made the checks
+  run against the wrong name.
+- Environment.ps1 / StoragePaths.ps1: icewarp.path.source now
+  reports 	ool_exe on Windows (it previously reported 	ool_sh, which
+  is the Linux value).
+- Health.ps1: os_update can no longer be marked CRITICAL when the last
+  update date cannot be parsed. An unparseable date now yields skip
+  instead of the 999-day fallback that would have produced a CRITICAL
+  result.
+
+### Verification
+
+- Pester: 28/28 passed.
+- Full run: gent.ps1 -Report exits 0 with 433 keys, 0 schema violations.
+- All 36 .ps1 files are CRLF and parse cleanly under PowerShell 5.1.# Changelog - IceWarp Health Agent for Windows
 
 All notable changes to the Windows implementation are documented here.
 The Linux agent keeps its own changelog in the repository root.

@@ -32,31 +32,113 @@ $data['watchdog.remoteserver.report_email'] = (Get-IceWarpSetting -Name 'C_Syste
 $data['watchdog.remoteserver.notify_when_back'] = (Get-IceWarpSetting -Name 'C_System_Tools_RemoteServer_NotifyAgain' -Context $Context)
 
 # --- Derived watchdog summaries (mirror collectors/watchdog/watchdog_percentage.sh) ---
+#
+# NOTE: each collector runs in an isolated PowerShell runspace, so
+# $Context.Data does NOT contain the os.* / storage.* values emitted by
+# other collectors. The summaries below are computed directly from the
+# local system instead of reading other collectors' output.
 
-$diskPctText = [string]$Context.Data['storage.root_fs.used_percent']
-$diskPct = 0
-if ([int]::TryParse($diskPctText -replace '%', [ref]$null)) { }
-if ([int]::TryParse(([string]$diskPctText).Replace('%',''), [ref]$diskPct)) {
-    if ($diskPct -ge 80) {
+function Get-WatchdogCpuLoad {
+    [CmdletBinding()]
+    param()
+    # Win32_Processor.LoadPercentage is already a 0-100 percentage (per the
+    # MSDN contract), so it is used directly - unlike the Linux 1-min load
+    # average, it must NOT be divided by the core count and multiplied by 100.
+    $load = 0.0
+    $cores = 1
+    try {
+        $procs = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop)
+        $cores = [Math]::Max(1, $procs.Count)
+        $sum = 0.0
+        $n = 0
+        foreach ($p in $procs) {
+            if ($p.LoadPercentage -ge 0) {
+                $sum += [double]$p.LoadPercentage
+                $n++
+            }
+        }
+        if ($n -gt 0) {
+            $load = [Math]::Round($sum / $n, 2)
+        }
+    } catch { }
+    return [psobject]@{ Load1 = $load; Cores = $cores }
+}
+
+
+function Get-WatchdogDiskUsage {
+    [CmdletBinding()]
+    param()
+    $pct = 0
+    $ok = $false
+    try {
+        $disk = Get-CimInstance -ClassName Win32_LogicalDisk -ErrorAction Stop |
+            Where-Object { $_.DeviceID -eq 'C:' } | Select-Object -First 1
+        if ($disk -and $disk.TotalSize -gt 0) {
+            $pct = [Math]::Round((($disk.TotalSize - $disk.FreeSpace) / $disk.TotalSize) * 100, 2)
+            $ok = $true
+        }
+    } catch { }
+    return [psobject]@{ Percent = $pct; Ok = $ok }
+}
+
+
+function Get-WatchdogMemoryUsage {
+    [CmdletBinding()]
+    param()
+    # Win32_OperatingSystem reports physical memory in kilobytes, so the
+    # values are used directly (no /1024 conversion).
+    $totalKb = 0
+    $availKb = 0
+    $ok = $false
+    try {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        if ($os -and $os.TotalPhysicalMemory) {
+            $totalKb = [long]$os.TotalPhysicalMemory
+            $availKb = [long]$os.FreePhysicalMemory
+            $ok = $totalKb -gt 0
+        }
+    } catch { }
+    return [psobject]@{ TotalKb = $totalKb; AvailableKb = $availKb; Ok = $ok }
+}
+
+
+function Get-WatchdogOsUpdateDays {
+    [CmdletBinding()]
+    param()
+    $days = -1
+    try {
+        $hotfix = Get-CimInstance -ClassName Win32_QuickFixEngineering -ErrorAction Stop |
+            Sort-Object -Property InstalledOn -Descending | Select-Object -First 1
+        if ($hotfix -and $hotfix.InstalledOn) {
+            $date = [datetime]$hotfix.InstalledOn
+            $days = [int](([datetime]::UtcNow - $date).TotalDays)
+        }
+    } catch { }
+    return $days
+}
+
+# --- Disk ---
+$disk = Get-WatchdogDiskUsage
+if ($disk.Ok) {
+    if ($disk.Percent -ge 80) {
         $data['watchdog.disk.status'] = 'WARN'
-        $data['watchdog.disk.message'] = "Disk usage is $diskPct% (threshold: 80%)"
+        $data['watchdog.disk.message'] = "Disk usage is $disk.Percent% (threshold: 80%)"
     } else {
         $data['watchdog.disk.status'] = 'PASS'
-        $data['watchdog.disk.message'] = "Disk usage is $diskPct% (OK)"
+        $data['watchdog.disk.message'] = "Disk usage is $disk.Percent% (OK)"
     }
 } else {
     $data['watchdog.disk.status'] = 'INFO'
     $data['watchdog.disk.message'] = 'Disk usage data not available'
 }
 
-$load1Text = [string]$Context.Data['os.cpu.load1']
-$coresText = [string]$Context.Data['os.cpu.count']
-$load1 = 0.0
-$cores = 1
-[double]::TryParse($load1Text, [ref]$load1) | Out-Null
-[int]::TryParse($coresText, [ref]$cores) | Out-Null
-if ($cores -gt 0) {
-    $cpuPct = [Math]::Round(($load1 / $cores) * 100, 2)
+# --- CPU ---
+# Win32_Processor.LoadPercentage is already a 0-100 percentage, so it is
+# used directly (the Linux 1-min load average would need /cores * 100, but
+# the Windows counter does not).
+$cpu = Get-WatchdogCpuLoad
+if ($cpu.Cores -gt 0) {
+    $cpuPct = [Math]::Round($cpu.Load1, 2)
     if ($cpuPct -gt 50) {
         $data['watchdog.cpu.status'] = 'WARN'
         $data['watchdog.cpu.message'] = "CPU load (1-min) is $cpuPct% (threshold: 50%)"
@@ -69,12 +151,10 @@ if ($cores -gt 0) {
     $data['watchdog.cpu.message'] = 'CPU count not available'
 }
 
-$totalKb = 0
-$availKb = 0
-[int]::TryParse([string]$Context.Data['os.memory.total_kb'], [ref]$totalKb) | Out-Null
-[int]::TryParse([string]$Context.Data['os.memory.available_kb'], [ref]$availKb) | Out-Null
-if ($totalKb -gt 0) {
-    $memPct = [Math]::Round((($totalKb - $availKb) / $totalKb) * 100, 2)
+# --- Memory ---
+$mem = Get-WatchdogMemoryUsage
+if ($mem.Ok) {
+    $memPct = [Math]::Round((($mem.TotalKb - $mem.AvailableKb) / $mem.TotalKb) * 100, 2)
     if ($memPct -gt 60) {
         $data['watchdog.memory.status'] = 'WARN'
         $data['watchdog.memory.message'] = "Memory usage is $memPct% (threshold: 60%)"
@@ -87,13 +167,9 @@ if ($totalKb -gt 0) {
     $data['watchdog.memory.message'] = 'Memory data not available'
 }
 
-$lastUpdate = [string]$Context.Data['os.last_update_date']
-if (-not [string]::IsNullOrEmpty($lastUpdate) -and $lastUpdate -ne 'null') {
-    $days = 0
-    try {
-        $date = [datetime]$lastUpdate
-        $days = [int](([datetime]::UtcNow - $date).TotalDays)
-    } catch { }
+# --- OS update ---
+$days = Get-WatchdogOsUpdateDays
+if ($days -ge 0) {
     if ($days -gt 3) {
         $data['watchdog.os_update.status'] = 'WARN'
         $data['watchdog.os_update.message'] = "OS last update was $days days ago (threshold: 3 days)"

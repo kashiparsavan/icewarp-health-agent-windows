@@ -25,4 +25,8 @@ $data['icewarp.mail.default'] = (Join-Path $iceHome 'mail')
 $data['icewarp.logs.default'] = (Join-Path $iceHome 'logs')
 $data['icewarp.temp.default'] = (Join-Path $iceHome 'temp')
 
+# On Windows the IceWarp paths are read through tool.exe, so the source is
+# always tool_exe. (Linux uses tool.sh and reports tool_sh.)
+$data['icewarp.path.source'] = 'tool_exe'
+
 return $data

@@ -25,9 +25,21 @@ try {
 
 # The mail hostname is the domain used for SPF/DKIM/DMARC lookups. Normalize
 # away a scheme, path, port or trailing dot so every DNS query is valid.
+#
+# The configured primary IceWarp domain is the authoritative source for
+# these lookups (it is what the server actually answers mail for). The
+# server hostname / COMPUTERNAME are only a last resort - using them would
+# make the checks run against the wrong name (e.g. win-6leqfj5p7er instead
+# of mtitc.ir).
 $hostname = ConvertTo-AgentHostName -Value ([string]$Context.Config.MailHostname)
 if ([string]::IsNullOrEmpty($hostname)) {
     $hostname = ConvertTo-AgentHostName -Value ([string]$Context.Config.MailDomain)
+}
+if ([string]::IsNullOrEmpty($hostname)) {
+    $primaryDomain = (Get-IceWarpDomainList -Context $Context) | Select-Object -First 1
+    if ($primaryDomain) {
+        $hostname = ConvertTo-AgentHostName -Value ([string]$primaryDomain)
+    }
 }
 if ([string]::IsNullOrEmpty($hostname)) {
     $hostname = ConvertTo-AgentHostName -Value ([string]$env:COMPUTERNAME)

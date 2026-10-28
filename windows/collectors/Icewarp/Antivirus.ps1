@@ -33,16 +33,37 @@ if (-not [string]::IsNullOrEmpty($lastUpdate)) {
 }
 
 # Fallback: Sophos update.json "ide" field (epoch seconds).
-$sophosPath = Join-Path $Context.Config.IceWarpHome 'sophos'
+#
+# On Windows the Sophos directory is not always under the IceWarp home
+# (it frequently lives under the per-user or program-data directory), so
+# probe several candidate locations before giving up.
+$sophosPath = $null
+$candidatePaths = @()
+$candidatePaths += (Join-Path $Context.Config.IceWarpHome 'sophos')
+foreach ($envRoot in @($env:APPDATA, $env:PROGRAMDATA, $env:USERPROFILE, $env:PUBLIC)) {
+    if (-not [string]::IsNullOrEmpty($envRoot)) {
+        $candidatePaths += (Join-Path (Join-Path $envRoot 'IceWarp') 'sophos')
+    }
+}
+foreach ($candidate in $candidatePaths) {
+    if (-not [string]::IsNullOrEmpty($candidate) -and
+        (Test-Path -LiteralPath (Join-Path $candidate 'update.json') -PathType Leaf)) {
+        $sophosPath = $candidate
+        break
+    }
+}
+
 $ideTs = ''
-$jsonPath = Join-Path $sophosPath 'update.json'
-if (Test-Path -LiteralPath $jsonPath -PathType Leaf) {
-    try {
-        $raw = Get-Content -LiteralPath $jsonPath -Raw -ErrorAction Stop
-        if ($raw -match '"ide"\s*:\s*(\d+)') {
-            $ideTs = $Matches[1]
-        }
-    } catch { }
+if ($sophosPath) {
+    $jsonPath = Join-Path $sophosPath 'update.json'
+    if (Test-Path -LiteralPath $jsonPath -PathType Leaf) {
+        try {
+            $raw = Get-Content -LiteralPath $jsonPath -Raw -ErrorAction Stop
+            if ($raw -match '"ide"\s*:\s*(\d+)') {
+                $ideTs = $Matches[1]
+            }
+        } catch { }
+    }
 }
 
 if (-not [string]::IsNullOrEmpty($ideTs)) {
@@ -60,8 +81,8 @@ if (-not [string]::IsNullOrEmpty($ideTs)) {
 }
 
 # DB version file, when present.
-$avdbPath = Join-Path $sophosPath 'avdbinfo.dat'
-if (Test-Path -LiteralPath $avdbPath -PathType Leaf) {
+$avdbPath = if ($sophosPath) { Join-Path $sophosPath 'avdbinfo.dat' } else { $null }
+if ($avdbPath -and (Test-Path -LiteralPath $avdbPath -PathType Leaf)) {
     try {
         $raw = [System.IO.File]::ReadAllText($avdbPath)
         $clean = ($raw -replace '[\r\n\0]').Substring(0, [Math]::Min(100, $raw.Length))
