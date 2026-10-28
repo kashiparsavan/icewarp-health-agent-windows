@@ -36,3 +36,12 @@
    - OMP must repeat this loop up to 10 times (20 minutes max).
    - ONLY when OMP sees `[STATUS: DONE]`, it stops looping, reads the `### Final Result`, and proceeds to review and assign the next task.
    - This ensures the agents work asynchronously without human intervention and without burning LLM tokens in an infinite `Wait` loop.
+10. **WINDOWS SHELL ENVIRONMENT:** The agents are running on Windows (PowerShell), NOT Linux. 
+   - NEVER use `cat`, `echo >`, `<<EOF`, or other bash-specific commands.
+   - To append to a file, ALWAYS use the native `Write` tool to overwrite the whole file, or use PowerShell `Add-Content`.
+11. **STALLED WORKER & TOKEN EXHAUSTION HANDLING (OMP):**
+   - If OMP sees `[STATUS: IN_PROGRESS]`, it must check the `### Execution Logs` timestamps.
+   - If no new log has been added in the last 15 minutes (or if 5 polling cycles pass with no changes), OMP MUST assume the worker (OpenCode) has hit a rate limit, ran out of tokens, or crashed.
+   - **Action:** OMP must change the status to `[STATUS: STALLED]`.
+   - OMP must then STOP polling and tell the human user: *"Worker seems stalled. Please check OpenCode's UI for token limits. I am pausing for 10 minutes."*
+   - OMP must then use PowerShell to wait: `Start-Sleep -Seconds 600` (NOT bash `sleep`). After 10 minutes, it can check again.

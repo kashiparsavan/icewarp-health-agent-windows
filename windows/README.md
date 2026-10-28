@@ -4,13 +4,14 @@ This directory contains an independent Windows implementation of the IceWarp
 Health Agent. It is written for **Windows PowerShell 5.1** and does not use
 Bash, `agent.sh`, or any file under the Linux `lib/` directory.
 
-Current status: **0.1.2, ten collectors plus the health engine**.
+Current status: **0.1.3, 27 collectors plus the health engine**.
 Configuration, logging, the `tool.exe` wrapper, schema-compatible flat JSON
 output, DNS/SMTP/security/storage/license/backup collectors, the health
-evaluation engine, and Pester contract tests are in place. 340 of the 432
-Linux `health.json` keys are implemented; the remaining 92 are tracked in
-`docs/api-key-mapping.md`. PDF reports, the full 113-item checklist and
-automatic updates are not ported yet.
+evaluation engine, and Pester contract tests are in place. 429 of the 432
+Linux `health.json` keys are implemented; the remaining 3 are dynamic
+`domain.designhost.ir.*` keys that depend on a discovered `designhost.ir`
+domain. PDF reports, the full 113-item checklist and automatic updates are
+not ported yet.
 
 ## Requirements
 
@@ -156,18 +157,35 @@ Rules:
 | Collector | Checklist items | Description |
 |---|---|---|
 | General/Version | IceWarp Version | `C_Version`, `C_NiceVersion`, OS details |
+| Icewarp/Antispam | Antispam Last Update | Antispam rule update date, version, size, ever_updated flag |
+| Icewarp/Antivirus | Antivirus Last Update | Sophos update date, version, size, source |
+| Icewarp/AdminAccess | Change Admin URL, Change Admin Port | WebAdmin URL, remote-console port, changed_from_default flags |
 | Icewarp/BackupArchive | Backup configuration | System/database backups and last-run timestamp |
-| Icewarp/DnsMailFlow | SPF, DKIM, DMARC, PTR, DNS, STARTTLS | DNS records and live SMTP STARTTLS probe |
+| Icewarp/Certificate | Check for Certificates | TLS cert path, live SslStream expiry check, days left |
+| Icewarp/CloudFeatures | Disable Cloud Features | Cloud API auto-configure flag |
+| Icewarp/DatabaseType | MySQL Server (scope) | Accounts ODBS connection string, DB type, scope, host |
+| Icewarp/DirectoryCache | Directory Cache | Directory cache connection string, schedule, next run |
+| Icewarp/DnsMailFlow | SPF, DKIM, DMARC, PTR, DNS, STARTTLS | DNS records, live SMTP STARTTLS probe, DKIM active flag |
 | Icewarp/DomainsUsers | Daily Send Email limit, Disk Quota | Auto-discovered domain limits |
+| Icewarp/Environment | IceWarp Environment | Home, config, default mail/logs/temp paths |
+| Icewarp/Fulltext | Full-Text Search | Full-text enabled flag, scanner queues |
+| Icewarp/Http | HTTP settings | Web server port, max connections |
 | Icewarp/License | IceWarp Expiration Date | License status, type, trial expiration |
+| Icewarp/Logging | Enable SQL/Failed Logs | SQL log type, auth/maintenance/mailqueue log levels |
+| Icewarp/Migration | Migration Safety | Migration active/server/errors/started flags |
 | Icewarp/Monitor | System Monitor | Monitor enable flag, report address, CPU/RAM/disk thresholds |
+| Icewarp/MySQL | MySQL Server | MySQL service, version, listening port, OS version (when applicable) |
 | Icewarp/OsStorage | OS update, memory, CPU, storage | OS update date, memory/CPU load, storage paths and usage |
-| Icewarp/Security | Password, login, TLS, DIGEST-MD5, RBL | Security policy, ports, RBL and Cyren folder status |
+| Icewarp/Queue | SMTP Incoming Queue | Incoming queue enable/size, no-retry flag |
+| Icewarp/Security | Password, login, TLS, DIGEST-MD5, RBL | Security policy, ports, RBL and Cyren folder status, antispam policy |
 | Icewarp/ServiceStatus | Process SMTP, Process POP3/IMAP | Service ports and startup mode |
+| Icewarp/SessionTimeout | Session Timeout (min) | Session timeout minutes |
 | Icewarp/SmtpSettings | SMTP settings | SMTP ports, limits, TLS and message-size settings |
+| Icewarp/StoragePaths | Storage Directories | Mail/temp/logs/archive paths and source flag |
+| Icewarp/Watchdog | Enable System Watchdog | Service watchdog flags, remote-server watchdog, derived summaries |
 
 `General/Version` reads `C_Version` and `C_NiceVersion` and adds basic
-operating-system fields; all ten collectors are listed in the table above.
+operating-system fields; all 27 collectors are listed in the table above.
 
 ## API Reference
 

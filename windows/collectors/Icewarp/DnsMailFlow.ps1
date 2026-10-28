@@ -214,6 +214,17 @@ $data['dns.dkim.found'] = $false
 $data['dns.dkim.selector_found'] = ''
 $data['dns.dkim.record'] = ''
 
+# icewarp.dkim.active_flag - the IceWarp-side DKIM toggle, read per domain.
+$dkimActive = (Get-IceWarpDomainSetting -Domain $hostname -Name 'D_DKIM_Active' -Context $Context)
+$dkimNum = 0
+if ([int]::TryParse([string]$dkimActive, [ref]$dkimNum)) {
+    $data['icewarp.dkim.active_flag'] = ($dkimNum -eq 1)
+} elseif ([string]::IsNullOrEmpty($dkimActive)) {
+    $data['icewarp.dkim.active_flag'] = $false
+} else {
+    $data['icewarp.dkim.active_flag'] = ([bool]($dkimActive -ieq 'true' -or $dkimActive -eq '1'))
+}
+
 if (-not [string]::IsNullOrEmpty($hostname)) {
     foreach ($selector in $selectors) {
         $queryName = ('{0}._domainkey.{1}' -f $selector, $hostname)

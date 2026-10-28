@@ -93,6 +93,12 @@ $data['security.ip_reputation.use'] = (Get-IceWarpSetting -Name 'C_AS_IPreputati
 # --- Live anti-spam ---
 $data['security.antispam_live.enabled'] = (Get-IceWarpSetting -Name 'C_AS_Live_Enable' -Context $Context)
 
+# --- Anti-spam policy (bypass, threads, mode) ---
+$data['antispam.bypass_local_ips'] = (Get-IceWarpSetting -Name 'C_AS_BypassLocalIPs' -Context $Context)
+$data['antispam.bypass_local_domains'] = (Get-IceWarpSetting -Name 'C_AS_BypassLocalDomains' -Context $Context)
+$data['antispam.max_threads'] = (Get-IceWarpSetting -Name 'C_AS_SpamMaxThreads' -Context $Context)
+$data['antispam.mode'] = (Get-IceWarpSetting -Name 'C_AS_General_AntispamMode' -Context $Context)
+
 # --- Auth schemes + DIGEST-MD5 detection ---
 # The Windows help file has C_Accounts_Policies_Auth_Schemes; the old
 # C_Mail_Security_AuthScheme name does not exist.
@@ -232,7 +238,10 @@ foreach ($flagKey in @(
     'security.reject_no_rdns',
     'security.reject_domain_no_mx',
     'security.ip_reputation.use',
-    'security.antispam_live.enabled'
+    'security.antispam_live.enabled',
+    'antispam.bypass_local_ips',
+    'antispam.bypass_local_domains',
+    'antispam.mode'
 )) {
     if ($data.Contains($flagKey)) {
         $data[$flagKey] = ConvertTo-AgentNumericFlag -Value $data[$flagKey]

@@ -149,6 +149,54 @@ Describe 'Windows agent contract' {
                     '^C_System_Tools_AutoArchive_TrailerPath$' { return '"yyyy-mm"' }
                     '^c_system_tools_backup_db_(accounts|as|directorycache|gw)$' { return 'dsn' }
                     '^C_Mail_Security_Tarpit_SpamScore$' { return '9216' }
+                    '^C_WebAdmin_URL$' { return '' }
+                    '^C_System_RemoteConsoleProtocol_Port$' { return '0' }
+                    '^C_AS_BypassLocalIPs$' { return '' }
+                    '^C_AS_BypassLocalDomains$' { return '' }
+                    '^C_AS_SpamMaxThreads$' { return '' }
+                    '^C_AS_General_AntispamMode$' { return '' }
+                    '^C_AV_Info_UpdateDate$' { return '' }
+                    '^C_AV_Info_UpdateVersion$' { return '' }
+                    '^C_AV_Info_UpdateSize$' { return '' }
+                    '^C_AS_Info_UpdateDate$' { return '' }
+                    '^C_AS_Info_UpdateVersion$' { return '' }
+                    '^C_AS_Info_UpdateSize$' { return '' }
+                    '^C_CloudAPI_AutoConfigure$' { return '' }
+                    '^C_System_Tools_Migration_Active$' { return '' }
+                    '^C_System_Tools_Migration_Server$' { return '' }
+                    '^C_System_Tools_Migration_Stat_Start$' { return '' }
+                    '^C_System_Tools_Migration_Stat_Errors$' { return '' }
+                    '^C_System_SQLLogType$' { return '' }
+                    '^C_Accounts_Global_Accounts_AuthLog$' { return '' }
+                    '^C_Accounts_Global_Accounts_MaintenanceLog$' { return '' }
+                    '^C_System_Log_MailQueue$' { return '' }
+                    '^C_System_Services_Fulltext_Enabled$' { return '' }
+                    '^C_System_Services_Fulltext_Scanner_Queues$' { return '' }
+                    '^C_System_Services_Control_SslPort$' { return '443' }
+                    '^C_Mail_SMTP_Delivery_UseIncomingQueue$' { return '' }
+                    '^C_Mail_SMTP_Delivery_IncomingQueueSize$' { return '' }
+                    '^C_Mail_SMTP_Other_NoRetryQueue$' { return '' }
+                    '^C_Accounts_Global_Accounts_DirectoryCacheConnectionString$' { return '' }
+                    '^C_Accounts_Global_Accounts_DirectoryCacheSchedule$' { return '' }
+                    '^C_System_Storage_Accounts_ODBCConnString_Real$' { return '' }
+                    '^C_System_Storage_Dir_MailPath$' { return '' }
+                    '^C_System_Storage_Dir_TempPath$' { return '' }
+                    '^C_System_Storage_Dir_LogPath$' { return '' }
+                    '^C_System_Tools_AutoArchive_Path$' { return '' }
+                    '^C_System_Tools_WatchDog_SMTP$' { return '' }
+                    '^C_System_Tools_WatchDog_POP3$' { return '' }
+                    '^C_System_Tools_WatchDog_IM$' { return '' }
+                    '^C_System_Tools_Watchdog_GW$' { return '' }
+                    '^C_System_Tools_Watchdog_Control$' { return '' }
+                    '^C_System_Tools_Watchdog_Int$' { return '' }
+                    '^C_System_Tools_Watchdog_Check_Protocols$' { return '' }
+                    '^C_System_Tools_Watchdog_Check_IPList$' { return '' }
+                    '^C_System_Tools_RemoteServer_Enable$' { return '' }
+                    '^C_System_Tools_RemoteServer_MoreThan$' { return '' }
+                    '^C_System_Tools_RemoteServer_Email$' { return '' }
+                    '^C_System_Tools_RemoteServer_NotifyAgain$' { return '' }
+                    '^C_System_Ssl_CertFile$' { return '' }
+                    '^C_System_Adv_Protocols_SessionTimeOut$' { return '' }
                     default { return '1' }
                 }
             }

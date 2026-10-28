@@ -38,6 +38,9 @@ foreach ($entry in @(Get-IceWarpDomainList -Context $Context)) {
 if ($domains.Count -eq 0) {
     $data['domain.checked'] = $false
     $data['domain.count'] = 0
+    $data['domain.list'] = ''
+    $data['domain.primary.name'] = ''
+    $data['domain.primary.daily_send_messages_limit'] = ''
     return $data
 }
 

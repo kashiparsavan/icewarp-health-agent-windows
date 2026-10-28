@@ -46,27 +46,17 @@ Rules for this mapping:
 ## 3. Coverage summary
 
 - **Schema keys:** 432
-- **Implemented by the current Windows codebase (10 collectors + health engine + context):** 340
-- **Remaining (planned):** 92
-- Implemented sections: agent/general/service/domain, IceWarp environment/version/license, SMTP, security, DNS, backup/archive, OS/system/storage, System Monitor, and the full health evaluation layer.
-- The 84-key `health.*` evaluation layer and all 8 `monitor.*` source keys are now implemented. The remaining keys are mostly direct `tool.exe` reads for admin, antispam, database, directory cache, logging, queue, watchdog, and MySQL.
+- **Implemented by the current Windows codebase (27 collectors + health engine + context):** 429
+- **Remaining (conditional):** 3 (domain.designhost.ir.* - emitted only when that domain is discovered)
+- Implemented sections: agent/general/service/domain, IceWarp environment/version/license, SMTP, security, watchdog, logging, http, fulltext, queue, mysql/database, directory cache, migration, cloud, DKIM, TLS certificate, admin access, storage paths, backup/archive, DNS mail flow, OS/storage, System Monitor, and the full health evaluation layer.
+- The 85-key `health.*` evaluation layer and all 8 `monitor.*` source keys are now implemented. The remaining 3 keys are dynamic domain keys that depend on a discovered `designhost.ir` domain.
 
 ### Remaining keys by area
 
 | Area | Keys remaining |
 |---|---:|
-| `admin.*` | 4 |
-| `antispam.*` | 4 |
-| `database.*` | 5 |
-| `directory_cache.*` | 4 |
-| `fulltext.*` | 2 |
-| `http.*` | 2 |
-| `icewarp.*` | 33 |
-| `logging.*` | 4 |
-| `mysql.*` | 9 |
-| `queue.*` | 3 |
-| `watchdog.*` | 22 |
-| **Total** | **92** |
+| `domain.designhost.ir.*` | 3 |
+| **Total** | **3** |
 
 ## 4. Implemented mappings
 

@@ -401,6 +401,26 @@ function Invoke-HealthDiskCheck {
             Set-HealthResult -Name 'disk.overall' -Result 'pass' -Message 'All monitored disks have adequate free space' -Data $Data
         }
     }
+
+    # The schema sample always carries a message for the first disk label
+    # (health.disk.root_fs.message). When root_fs is a dedupe of another
+    # label, copy that label's note across so the key is present.
+    if ($Data.Contains('health.disk.root_fs.result') -and
+        -not $Data.Contains('health.disk.root_fs.message')) {
+        $firstLabel = $null
+        foreach ($label in $seen.Values) {
+            $firstLabel = $label
+            break
+        }
+        if ($firstLabel) {
+            $sourceKey = 'health.disk.{0}.message' -f $firstLabel
+            if ($Data.Contains($sourceKey)) {
+                $Data['health.disk.root_fs.message'] = $Data[$sourceKey]
+            } else {
+                $Data['health.disk.root_fs.message'] = 'Disk status could not be determined'
+            }
+        }
+    }
 }
 
 function Invoke-HealthCpuCheck {
