@@ -20,13 +20,13 @@ $data = [ordered]@{}
 
 # --- Database backups ---
 $data['backup.db.accounts.enabled'] = (Get-IceWarpSetting -Name 'c_system_tools_backup_db_accountsenabled' -Context $Context)
-$data['backup.db.accounts.target_dsn'] = (Get-IceWarpSetting -Name 'c_system_tools_backup_db_accounts' -Context $Context)
+$data['backup.db.accounts.target_dsn'] = (Redact-DatabaseDsn -Value (Get-IceWarpSetting -Name 'c_system_tools_backup_db_accounts' -Context $Context))
 $data['backup.db.as.enabled'] = (Get-IceWarpSetting -Name 'c_system_tools_backup_db_asenabled' -Context $Context)
-$data['backup.db.as.target_dsn'] = (Get-IceWarpSetting -Name 'c_system_tools_backup_db_as' -Context $Context)
+$data['backup.db.as.target_dsn'] = (Redact-DatabaseDsn -Value (Get-IceWarpSetting -Name 'c_system_tools_backup_db_as' -Context $Context))
 $data['backup.db.cache.enabled'] = (Get-IceWarpSetting -Name 'c_system_tools_backup_db_directorycacheenabled' -Context $Context)
-$data['backup.db.cache.target_dsn'] = (Get-IceWarpSetting -Name 'c_system_tools_backup_db_directorycache' -Context $Context)
+$data['backup.db.cache.target_dsn'] = (Redact-DatabaseDsn -Value (Get-IceWarpSetting -Name 'c_system_tools_backup_db_directorycache' -Context $Context))
 $data['backup.db.gw.enabled'] = (Get-IceWarpSetting -Name 'c_system_tools_backup_db_gwenabled' -Context $Context)
-$data['backup.db.gw.target_dsn'] = (Get-IceWarpSetting -Name 'c_system_tools_backup_db_gw' -Context $Context)
+$data['backup.db.gw.target_dsn'] = (Redact-DatabaseDsn -Value (Get-IceWarpSetting -Name 'c_system_tools_backup_db_gw' -Context $Context))
 $data['backup.emails.enabled'] = (Get-IceWarpSetting -Name 'c_system_tools_backup_emails' -Context $Context)
 
 # --- Automatic backup policy ---

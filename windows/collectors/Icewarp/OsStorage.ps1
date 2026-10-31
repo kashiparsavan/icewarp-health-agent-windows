@@ -108,7 +108,8 @@ try {
     $hotfix = Get-CimInstance -ClassName Win32_QuickFixEngineering -ErrorAction Stop |
         Sort-Object -Property InstalledOn -Descending | Select-Object -First 1
     if ($hotfix -and $hotfix.InstalledOn) {
-        $lastUpdate = ([datetime]$hotfix.InstalledOn).ToString('yyyy-MM-dd HH:mm')
+        $rawDate = [string]$hotfix.InstalledOn
+        $lastUpdate = (Normalize-ToIsoDate -Value $rawDate)
     }
 } catch { }
 $data['os.last_update_date'] = $lastUpdate

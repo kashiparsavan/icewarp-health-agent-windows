@@ -128,7 +128,7 @@ if ($disk.Ok) {
         $data['watchdog.disk.message'] = "Disk usage is $disk.Percent% (OK)"
     }
 } else {
-    $data['watchdog.disk.status'] = 'INFO'
+    $data['watchdog.disk.status'] = 'warn'
     $data['watchdog.disk.message'] = 'Disk usage data not available'
 }
 
@@ -147,7 +147,7 @@ if ($cpu.Cores -gt 0) {
         $data['watchdog.cpu.message'] = "CPU load (1-min) is $cpuPct% (OK)"
     }
 } else {
-    $data['watchdog.cpu.status'] = 'INFO'
+    $data['watchdog.cpu.status'] = 'warn'
     $data['watchdog.cpu.message'] = 'CPU count not available'
 }
 
@@ -163,7 +163,7 @@ if ($mem.Ok) {
         $data['watchdog.memory.message'] = "Memory usage is $memPct% (OK)"
     }
 } else {
-    $data['watchdog.memory.status'] = 'INFO'
+    $data['watchdog.memory.status'] = 'warn'
     $data['watchdog.memory.message'] = 'Memory data not available'
 }
 
@@ -178,7 +178,7 @@ if ($days -ge 0) {
         $data['watchdog.os_update.message'] = "OS last update was $days days ago (OK)"
     }
 } else {
-    $data['watchdog.os_update.status'] = 'INFO'
+    $data['watchdog.os_update.status'] = 'warn'
     $data['watchdog.os_update.message'] = 'OS last update date not available'
 }
 

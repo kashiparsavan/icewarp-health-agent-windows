@@ -72,6 +72,133 @@ function ConvertTo-AgentHostName {
     return $hostName
 }
 
+function Redact-DatabaseDsn {
+    <#
+    .SYNOPSIS
+    Strip any embedded password from a database connection string / DSN
+    before it is written to the health report. Passwords must never reach
+    the JSON output.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return ''
+    }
+
+    $v = $Value.Trim()
+
+    # SQLite file DSNs carry no credentials; leave them untouched.
+    if ($v -imatch 'sqlite' -or $v -match '\.db(;|$)') {
+        return $v
+    }
+
+    # Positional DSN: "dbname;user;password;host;port" - the password is the
+    # third field (index 2). Field 1 is the user, which is also sensitive in
+    # some deployments, but the schema only flags the password.
+    if ($v -match '^[^;]+;[^;]+;[^;]+;') {
+        $parts = $v -split ';', 4
+        if ($parts.Length -ge 3) {
+            $parts[2] = '***'
+        }
+        return ($parts -join ';')
+    }
+
+    # key=value form: redact password/pwd/passwd keys only.
+    $redacted = [System.Text.StringBuilder]::new()
+    $i = 0
+    while ($i -lt $v.Length) {
+        $eq = $v.IndexOf('=', $i)
+        $semi = $v.IndexOf(';', $i)
+        if ($eq -lt 0 -or ($semi -ge 0 -and $eq -gt $semi)) {
+            # No more key=value pairs; copy the remainder verbatim.
+            [void]$redacted.Append($v.Substring($i))
+            break
+        }
+        [void]$redacted.Append($v.Substring($i, $eq - $i))
+        [void]$redacted.Append('=')
+        $key = $v.Substring($i, $eq - $i).Trim().ToLowerInvariant()
+        $valStart = $eq + 1
+        $valEnd = if ($semi -ge 0) { $semi } else { $v.Length }
+        $val = $v.Substring($valStart, $valEnd - $valStart)
+        if ($key -eq 'password' -or $key -eq 'pwd' -or $key -eq 'passwd') {
+            $val = '***'
+        }
+        [void]$redacted.Append($val)
+        $i = $valEnd
+        if ($semi -ge 0) {
+            [void]$redacted.Append(';')
+            $i = $semi + 1
+        }
+    }
+    return $redacted.ToString()
+}
+
+function Normalize-ToIsoDate {
+    <#
+    .SYNOPSIS
+    Normalize any supported date string to YYYY-MM-DD (optionally with a
+    time component). Non-ISO inputs such as "10/25/2026" are converted;
+    already-ISO values are returned unchanged. Unparseable values are
+    returned as-is so callers can decide how to handle them.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return ''
+    }
+
+    $v = $Value.Trim()
+    if ([string]::IsNullOrEmpty($v)) {
+        return ''
+    }
+
+    # Already ISO (with or without a time component) - leave untouched.
+    if ($v -match '^\d{4}-\d{2}-\d{2}(\s+\d{2}:\d{2}(:\d{2})?)?$') {
+        return $v
+    }
+
+    # MM/DD/YYYY or M/D/YYYY (US format from CIM / tool output).
+    if ($v -match '^(\d{1,2})/(\d{1,2})/(\d{4})$') {
+        $m = [int]$Matches[1]
+        $d = [int]$Matches[2]
+        $y = [int]$Matches[3]
+        if ($m -ge 1 -and $m -le 12 -and $d -ge 1 -and $d -le 31 -and $y -ge 1900) {
+            return ('{0:0000}-{1:00}-{2:00}' -f $y, $m, $d)
+        }
+    }
+
+    # YYYY/MM/DD
+    if ($v -match '^(\d{4})/(\d{1,2})/(\d{1,2})$') {
+        $y = [int]$Matches[1]
+        $m = [int]$Matches[2]
+        $d = [int]$Matches[3]
+        if ($m -ge 1 -and $m -le 12 -and $d -ge 1 -and $d -le 31 -and $y -ge 1900) {
+            return ('{0:0000}-{1:00}-{2:00}' -f $y, $m, $d)
+        }
+    }
+
+    # Loose fallback: let .NET parse and reformat.
+    try {
+        $parsed = [datetime]::Parse($v, [System.Globalization.CultureInfo]::InvariantCulture)
+        if ($parsed -ne [datetime]::MinValue) {
+            if ($parsed.Hour -eq 0 -and $parsed.Minute -eq 0 -and $parsed.Second -eq 0) {
+                return $parsed.ToString('yyyy-MM-dd')
+            }
+            return $parsed.ToString('yyyy-MM-dd HH:mm:ss')
+        }
+    } catch { }
+
+    return $v
+}
+
 function ConvertTo-AgentNumericFlag {
     [CmdletBinding()]
     param(

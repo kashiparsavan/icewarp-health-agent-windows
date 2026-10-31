@@ -17,7 +17,7 @@ param(
 
 $data = [ordered]@{}
 
-$lastUpdate = (Get-IceWarpSetting -Name 'C_AS_Info_UpdateDate' -Context $Context)
+$lastUpdate = (Normalize-ToIsoDate -Value (Get-IceWarpSetting -Name 'C_AS_Info_UpdateDate' -Context $Context))
 $version = (Get-IceWarpSetting -Name 'C_AS_Info_UpdateVersion' -Context $Context)
 $size = (Get-IceWarpSetting -Name 'C_AS_Info_UpdateSize' -Context $Context)
 

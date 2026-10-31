@@ -57,7 +57,7 @@ function Set-HealthResult {
         [Parameter(Mandatory = $true)]
         [string]$Name,
         [Parameter(Mandatory = $true)]
-        [ValidateSet('pass', 'warn', 'fail', 'critical', 'skip', 'info')]
+        [ValidateSet('pass', 'warn', 'fail', 'critical', 'skip', 'info', 'ok')]
         [string]$Result,
         [AllowEmptyString()]
         [string]$Message,
@@ -245,8 +245,9 @@ function Get-HealthWorst {
             'critical' { $worst = 'fail';  $any = $true; break }
             'warn'     { if ($worst -ne 'fail') { $worst = 'warn' } $any = $true }
             'pass'     { $any = $true }
-            'info'     { $any = $true }
-            default    { }  # skip
+            'ok'      { $any = $true }
+            'info'    { $any = $true }
+            default   { }  # skip
         }
     }
     if (-not $any) { return 'skip' }
@@ -341,6 +342,14 @@ function Invoke-HealthDiskCheck {
             continue
         }
         $seen[$dedupeKey] = $mountName
+
+        $statusText = Get-HealthValue -Data $Data -Key ('storage.{0}.status' -f $mountName)
+        # The collector marks a drive WARNING when it is above the 90% used
+        # threshold; that must count toward the overall status even when the
+        # free-space floor check itself still passes.
+        if ($statusText -eq 'WARNING' -or $statusText -ieq 'warn') {
+            if ($worst -ne 'fail') { $worst = 'warn' }
+        }
 
         $freeGbText = Get-HealthValue -Data $Data -Key $key
         $freeGb = ConvertTo-HealthNumber -Value $freeGbText
@@ -438,13 +447,16 @@ function Invoke-HealthCpuCheck {
     $cores = ConvertTo-HealthNumber -Value $coresText
     $threshold = ConvertTo-HealthNumber -Value $thresholdText
 
-    if ($null -ne $load -and $null -ne $cores -and $null -ne $threshold -and $cores -gt 0) {
-        $limit = ($cores * $threshold) / 100
-        $limitText = $limit.ToString('0.00', [System.Globalization.CultureInfo]::InvariantCulture)
+    # os.cpu.load1 is already a 0-100 percentage on Windows (Win32_Processor
+    # LoadPercentage), so compare it directly against the threshold
+    # percentage rather than scaling it by the core count.
+    if ($null -ne $load -and $null -ne $threshold) {
+        $limit = $threshold
+        $limitText = $limit.ToString('0.##', [System.Globalization.CultureInfo]::InvariantCulture)
         if ($load -gt $limit) {
-            Set-HealthResult -Name 'cpu' -Result 'warn' -Message ('1-min load ({0}) exceeds threshold approximation ({1})' -f $loadText, $limitText) -Data $Data
+            Set-HealthResult -Name 'cpu' -Result 'warn' -Message ('1-min load ({0}%) exceeds threshold ({1}%)' -f $loadText, $limitText) -Data $Data
         } else {
-            Set-HealthResult -Name 'cpu' -Result 'pass' -Message ('1-min load ({0}) within threshold approximation ({1})' -f $loadText, $limitText) -Data $Data
+            Set-HealthResult -Name 'cpu' -Result 'pass' -Message ('1-min load ({0}%) within threshold ({1}%)' -f $loadText, $limitText) -Data $Data
         }
     } else {
         Set-HealthResult -Name 'cpu' -Result 'skip' -Message 'System Monitor CPU threshold missing or load/core data unavailable' -Data $Data
@@ -496,11 +508,12 @@ function Invoke-HealthBackupCheck {
         Set-HealthResult -Name 'backup.db.gw' -Result 'critical' -Message 'GroupWare database backup is DISABLED' -Data $Data
     }
 
-    # Directory Cache is optional; keep it informational like the Linux engine.
+    # Directory Cache is optional; emit ok when enabled and warn when it is
+    # disabled, rather than the informational "info" status.
     if ($dbCache -eq '1') {
-        Set-HealthResult -Name 'backup.db.cache' -Result 'info' -Message 'Directory Cache database backup is enabled (optional)' -Data $Data
+        Set-HealthResult -Name 'backup.db.cache' -Result 'ok' -Message 'Directory Cache database backup is enabled (optional)' -Data $Data
     } else {
-        Set-HealthResult -Name 'backup.db.cache' -Result 'info' -Message 'Directory Cache database backup is disabled (optional)' -Data $Data
+        Set-HealthResult -Name 'backup.db.cache' -Result 'warn' -Message 'Directory Cache database backup is disabled (optional)' -Data $Data
     }
 
     if (-not (Test-HealthMissing -Value $lastTime)) {
@@ -990,11 +1003,16 @@ function Invoke-HealthRollupsAndSummary {
             $tlsMessage = 'TLS delivery is enabled; certificate valid for {0} days' -f $certDaysText
         }
     } else {
+        # Certificate expiry data is unavailable. Downgrade a passing
+        # delivery result to WARN rather than leaving it PASS, so a missing
+        # cert check is never reported as fully healthy.
         if (-not [string]::IsNullOrWhiteSpace($tlsMessage)) {
             $tlsMessage = '{0}; certificate expiry unavailable' -f $tlsMessage
         }
+        if ($tlsResult -eq 'pass') { $tlsResult = 'warn' }
         if ([string]::IsNullOrWhiteSpace($tlsMessage)) {
             $tlsMessage = 'TLS certificate expiry is not available'
+            $tlsResult = 'warn'
         }
     }
     if ([string]::IsNullOrWhiteSpace($tlsMessage)) {

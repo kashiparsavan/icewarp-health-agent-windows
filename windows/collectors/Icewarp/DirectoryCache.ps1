@@ -19,7 +19,7 @@ $data = [ordered]@{}
 $conn = (Get-IceWarpSetting -Name 'C_Accounts_Global_Accounts_DirectoryCacheConnectionString' -Context $Context)
 $schedule = (Get-IceWarpSetting -Name 'C_Accounts_Global_Accounts_DirectoryCacheSchedule' -Context $Context)
 
-$data['directory_cache.connection_string'] = $conn
+$data['directory_cache.connection_string'] = (Redact-DatabaseDsn -Value $conn)
 
 if (-not [string]::IsNullOrEmpty($schedule)) {
     $data['directory_cache.scheduled'] = $true

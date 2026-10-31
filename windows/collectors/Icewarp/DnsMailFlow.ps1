@@ -41,9 +41,9 @@ if ([string]::IsNullOrEmpty($hostname)) {
         $hostname = ConvertTo-AgentHostName -Value ([string]$primaryDomain)
     }
 }
-if ([string]::IsNullOrEmpty($hostname)) {
-    $hostname = ConvertTo-AgentHostName -Value ([string]$env:COMPUTERNAME)
-}
+# Never fall back to the server hostname / COMPUTERNAME - the DNS checks
+# must run against the configured primary domain, otherwise SPF/DKIM/DMARC
+# and PTR queries are evaluated against the wrong name.
 
 # --- dns.configured_server - the DNS servers IceWarp was told to use ---
 $data['dns.configured_server'] = (Get-IceWarpSetting -Name 'C_Mail_SMTP_General_DNSServer' -Context $Context)
@@ -227,7 +227,10 @@ $data['dns.dkim.selector_found'] = ''
 $data['dns.dkim.record'] = ''
 
 # icewarp.dkim.active_flag - the IceWarp-side DKIM toggle, read per domain.
-$dkimActive = (Get-IceWarpDomainSetting -Domain $hostname -Name 'D_DKIM_Active' -Context $Context)
+$dkimActive = ''
+    if (-not [string]::IsNullOrEmpty($hostname)) {
+        $dkimActive = (Get-IceWarpDomainSetting -Domain $hostname -Name 'D_DKIM_Active' -Context $Context)
+    }
 $dkimNum = 0
 if ([int]::TryParse([string]$dkimActive, [ref]$dkimNum)) {
     $data['icewarp.dkim.active_flag'] = ($dkimNum -eq 1)

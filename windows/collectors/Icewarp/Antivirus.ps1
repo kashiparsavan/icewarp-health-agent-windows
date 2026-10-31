@@ -25,7 +25,7 @@ $version = (Get-IceWarpSetting -Name 'C_AV_Info_UpdateVersion' -Context $Context
 $size = (Get-IceWarpSetting -Name 'C_AV_Info_UpdateSize' -Context $Context)
 
 if (-not [string]::IsNullOrEmpty($lastUpdate)) {
-    $data['icewarp.antivirus.last_update'] = $lastUpdate
+    $data['icewarp.antivirus.last_update'] = (Normalize-ToIsoDate -Value $lastUpdate)
     $data['icewarp.antivirus.last_update_source'] = 'tool_sh'
     $data['icewarp.antivirus.db_version'] = $version
     $data['icewarp.antivirus.last_update_size_bytes'] = $size

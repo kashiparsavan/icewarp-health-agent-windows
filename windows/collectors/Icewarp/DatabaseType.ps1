@@ -25,7 +25,8 @@ $data = [ordered]@{}
 $data['database.host'] = ''
 $data['database.connection_string_raw'] = ''
 $conn = (Get-IceWarpSetting -Name 'C_System_Storage_Accounts_ODBCConnString_Real' -Context $Context)
-$data['database.connection_string_raw'] = $conn
+# Redact any embedded password before the raw DSN reaches the health report.
+$data['database.connection_string_raw'] = (Redact-DatabaseDsn -Value $conn)
 
 if ([string]::IsNullOrEmpty($conn)) {
     $data['database.type'] = 'sqlite'
