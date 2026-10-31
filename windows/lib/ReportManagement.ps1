@@ -88,7 +88,7 @@ function Mr-Ring([float]$cx,[float]$cy,[float]$r,[float]$rw,[string]$color){
 function Mr-Arc([float]$cx,[float]$cy,[float]$r,[float]$rw,[float]$a1,[float]$a2,[string]$color){
     $script:MR_CUR += "${color} RG`n${rw} w`n${cx} ${cy} ${r} ${a1} ${a2} re S`n"
 }
-function Mr-Paragraph([float]$x,[float]$y,[float]$w,[float]$h,[string]$txt,[string]$font,[float]$size,[string]$color,[float]$lh){
+function Mr-Paragraph([float]$x,[float]$y,[float]$w,[string]$txt,[string]$font,[float]$size,[string]$color,[float]$lh){
     $lines=0; $cur=""
     foreach($word in $txt.Split(' ')){
         $test=if($cur){$cur+" "+$word}else{$word}
@@ -125,7 +125,7 @@ function Mr-Background(){
 }
 function Mr-PageHeader([string]$title){
     Mr-Rect $script:MR_MARGIN ($script:MR_TOP_Y+12) ($script:MR_CONTENT_W) 22 $script:MR_C_INK
-    Mr-Text ($script:MR_MARGIN+10) ($script:MR_TOP_Y+17) $title 'Helvetica-Bold' 11 $script:MR_C_WHITE
+    Mr-TextTrunc ($script:MR_MARGIN+10) ($script:MR_TOP_Y+17) $title 'Helvetica-Bold' 11 $script:MR_C_WHITE 62
 }
 function Mr-PageFooter(){
     if($script:MR_FOOTER){
@@ -134,7 +134,7 @@ function Mr-PageFooter(){
     }
 }
 function Mr-NewPage(){
-    $script:MR_PAGES.Add($script:MR_CUR)|Out-Null
+    if($script:MR_CUR){ $script:MR_PAGES.Add($script:MR_CUR)|Out-Null }
     $script:MR_PAGE_NO++; $script:MR_CUR=""; $script:MR_Y=$script:MR_TOP_Y
     Mr-Background
 }
@@ -142,7 +142,7 @@ function Mr-Ensure([float]$need){
     if(($script:MR_Y-$need) -lt $script:MR_BOTTOM_Y){ Mr-NewPage }
 }
 function Mr-Finish(){
-    $script:MR_PAGES.Add($script:MR_CUR)|Out-Null
+    if($script:MR_CUR){ $script:MR_PAGES.Add($script:MR_CUR)|Out-Null }
 }
 function Mr-SectionHeader([string]$title,[string]$sec){
     Mr-Ensure 44
@@ -314,6 +314,7 @@ function Mr-RenderControlAreas([hashtable]$checklist){
         if(-not $items){ continue }
         $st=if($script:MR_SEC_CRIT[$sec]){'fail'}elseif($script:MR_SEC_WARN[$sec]){'warn'}elseif($script:MR_SEC_PASS[$sec]){'pass'}elseif($script:MR_SEC_INFO[$sec]){'info'}else{'na'}
         Mr-NewPage
+        $script:MR_Y=$script:MR_TOP_Y-16
         Mr-PageHeader $sec
         Mr-SectionStatus $sec
         $script:MR_Y-=30
@@ -370,46 +371,144 @@ function Mr-LegendItem([string]$label,[string]$color){
     $script:MR_Y-=12
 }
 function Mr-WriteFile([string]$OutPath){
-    $body=[System.Text.StringBuilder]::new()
-    $body.Append("%PDF-1.4`n")|Out-Null
-    $body.Append("1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj`n")|Out-Null
-    $body.Append("2 0 obj<</Type/Pages/Kids[" )|Out-Null
     $n=$script:MR_PAGES.Count
-    for($i=0;$i -lt $n;$i++){ $body.Append("$($i+3) 0 R ")|Out-Null }
-    $body.Append("]/Count $n>>endobj`n")|Out-Null
-    $fontObj=3+$n
-    $body.Append("$fontObj 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj`n")|Out-Null
-    $body.Append("$($fontObj+1) 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Bold>>endobj`n")|Out-Null
-    $body.Append("$($fontObj+2) 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Oblique>>endobj`n")|Out-Null
-    $body.Append("$($fontObj+3) 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica-BoldOblique>>endobj`n")|Out-Null
-    $contentStart=$fontObj+4
+    if($n -eq 0){ Write-Warning "management_report: nothing to render"; return $null }
+    $nl="`n"
+    $pageBase=3
+    $contentBase=$pageBase+$n
+    $fontBase=$contentBase+$n
+    $fontHelv=$fontBase
+    $fontBold=$fontBase+1
+    $fontObl=$fontBase+2
+    $fontBoldObl=$fontBase+3
+    $total=$fontBase+4
+    $offsets=@{}
+    $body=[System.Text.StringBuilder]::new()
+    [void]$body.Append("%PDF-1.4$nl")
+    $offsets[1]=$body.Length
+    [void]$body.Append("1 0 obj$($nl)<< /Type /Catalog /Pages 2 0 R >>$($nl)endobj$($nl)")
+    $offsets[2]=$body.Length
+    $kids=""
+    for($i=0;$i -lt $n;$i++){ $kids+="$($pageBase+$i) 0 R " }
+    [void]$body.Append("2 0 obj$($nl)<< /Type /Pages /Kids [ ${kids}] /Count $n >>$($nl)endobj$($nl)")
+    $fontRes="/Helvetica $fontHelv 0 R /Helvetica-Bold $fontBold 0 R /Helvetica-Oblique $fontObl 0 R /Helvetica-BoldOblique $fontBoldObl 0 R"
     for($i=0;$i -lt $n;$i++){
-        $body.Append("$($contentStart+$i) 0 obj<</Length $($script:MR_PAGES[$i].Length)>>stream`n")|Out-Null
-        $body.Append($script:MR_PAGES[$i])|Out-Null
-        $body.Append("`nendstream>>endobj`n")|Out-Null
+        $pageNum=$pageBase+$i
+        $contentNum=$contentBase+$i
+        $offsets[$pageNum]=$body.Length
+        [void]$body.Append("$pageNum 0 obj$($nl)<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $($script:MR_PAGE_W) $($script:MR_PAGE_H)] /Resources << /Font << $fontRes >> >> /Contents $contentNum 0 R >>$($nl)endobj$($nl)")
+        $stream=$script:MR_PAGES[$i]
+        $offsets[$contentNum]=$body.Length
+        [void]$body.Append("$contentNum 0 obj$($nl)<< /Length $($stream.Length) >>$($nl)stream$($nl)$stream$($nl)endstream$($nl)endobj$($nl)")
     }
+    $offsets[$fontHelv]=$body.Length
+    [void]$body.Append("$fontHelv 0 obj$($nl)<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>$($nl)endobj$($nl)")
+    $offsets[$fontBold]=$body.Length
+    [void]$body.Append("$fontBold 0 obj$($nl)<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>$($nl)endobj$($nl)")
+    $offsets[$fontObl]=$body.Length
+    [void]$body.Append("$fontObl 0 obj$($nl)<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>$($nl)endobj$($nl)")
+    $offsets[$fontBoldObl]=$body.Length
+    [void]$body.Append("$fontBoldObl 0 obj$($nl)<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-BoldOblique >>$($nl)endobj$($nl)")
     $xrefPos=$body.Length
-    $body.Append("xref`n0 $($contentStart+$n+1)`n")|Out-Null
-    $body.Append("0000000000 65535 f `n")|Out-Null
-    $offset=15
-    $body.Append("$($offset.ToString().PadLeft(10,'0')) 00000 n `n")|Out-Null
-    $body.Append("$($body.Length.ToString().PadLeft(10,'0')) 00000 n `n")|Out-Null
-    for($i=0;$i -lt $n;$i++){
-        $body.Append("$($body.Length.ToString().PadLeft(10,'0')) 00000 n `n")|Out-Null
+    [void]$body.Append("xref$($nl)0 $total$($nl)")
+    [void]$body.Append("0000000000 65535 f $($nl)")
+    for($obj=1;$obj -lt $total;$obj++){
+        $off=[int]$offsets[$obj]
+        [void]$body.Append(("{0:D10} 00000 n $($nl)" -f $off))
     }
-    for($i=0;$i -lt 4;$i++){
-        $body.Append("$($body.Length.ToString().PadLeft(10,'0')) 00000 n `n")|Out-Null
-    }
-    $body.Append("trailer<</Size $($contentStart+$n+1)/Root 1 0 R>>`n")|Out-Null
-    $body.Append("startxref`n$xrefPos`n%%EOF`n")|Out-Null
+    [void]$body.Append("trailer$($nl)<< /Size $total /Root 1 0 R >>$($nl)startxref$($nl)$xrefPos$($nl)%%EOF$($nl)")
     [System.IO.File]::WriteAllText($OutPath,$body.ToString())
+    return $OutPath
 }
-function Build-ManagementReportPdf([hashtable]$checklist,[string]$OutPath,[string]$Version,[string]$Date){
-    Mr-NewPage
+function ConvertTo-ManagementChecklist(){
+    $sections=[System.Collections.Generic.List[string]]::new()
+    $items=@{}
+    $rows=$script:CHECKLIST_CAPTURED
+    if($null -eq $rows){ return @{sections=$sections; items=$items} }
+    foreach($r in $rows){
+        $sec=$r.section
+        if([string]::IsNullOrEmpty($sec)){ $sec='General' }
+        if(-not $items.ContainsKey($sec)){
+            $items[$sec]=[System.Collections.Generic.List[object]]::new()
+            [void]$sections.Add($sec)
+        }
+        $status='info'
+        switch([string]$r.bkind){
+            'PASS' { $status='pass' }
+            'WARN' { $status='warn' }
+            'CRITICAL' { $status='fail' }
+            default {
+                if(([string]$r.value) -eq 'N/A' -or ([string]$r.btext) -eq 'N/A'){ $status='na' }
+                else { $status='info' }
+            }
+        }
+        [void]$items[$sec].Add([pscustomobject]@{
+            id=($items[$sec].Count + 1)
+            label=[string]$r.label
+            value=[string]$r.value
+            status=$status
+        })
+    }
+    return @{sections=$sections; items=$items}
+}
+
+function Initialize-ManagementCounts([hashtable]$checklist){
+    $script:MR_TOTAL=0; $script:MR_PASS=0; $script:MR_WARN=0
+    $script:MR_CRIT=0; $script:MR_INFO=0; $script:MR_NA=0
+    $script:MR_SEC_PASS=@{}; $script:MR_SEC_WARN=@{}
+    $script:MR_SEC_CRIT=@{}; $script:MR_SEC_INFO=@{}
+    $script:MR_ISSUES=[System.Collections.Generic.List[string]]::new()
+    foreach($sec in $checklist.sections){
+        $script:MR_SEC_PASS[$sec]=0; $script:MR_SEC_WARN[$sec]=0
+        $script:MR_SEC_CRIT[$sec]=0; $script:MR_SEC_INFO[$sec]=0
+        $secItems=$checklist.items[$sec]
+        if(-not $secItems){ continue }
+        foreach($item in $secItems){
+            $status=[string]$item.status
+            if([string]::IsNullOrEmpty($status)){ $status='na' }
+            $script:MR_TOTAL++
+            switch($status){
+                'pass' { $script:MR_PASS++; $script:MR_SEC_PASS[$sec]++ }
+                'warn' {
+                    $script:MR_WARN++; $script:MR_SEC_WARN[$sec]++
+                    [void]$script:MR_ISSUES.Add("$sec|$($item.id)|$($item.label)")
+                }
+                'fail' {
+                    $script:MR_CRIT++; $script:MR_SEC_CRIT[$sec]++
+                    [void]$script:MR_ISSUES.Add("$sec|$($item.id)|$($item.label)")
+                }
+                'info' { $script:MR_INFO++; $script:MR_SEC_INFO[$sec]++ }
+                default { $script:MR_NA++ }
+            }
+        }
+    }
+    $scored=$script:MR_PASS + $script:MR_WARN + $script:MR_CRIT
+    if($scored -gt 0){ $script:MR_SCORE=[int](($script:MR_PASS * 100) / $scored) } else { $script:MR_SCORE=0 }
+    if($script:MR_CRIT -gt 0){ $script:MR_OVERALL='fail' }
+    elseif($script:MR_WARN -gt 0){ $script:MR_OVERALL='warn' }
+    else { $script:MR_OVERALL='pass' }
+    if($script:MR_ISSUES.Count -gt 1){
+        $script:MR_ISSUES=[System.Collections.Generic.List[string]]@($script:MR_ISSUES | Sort-Object)
+    }
+}
+
+function Build-ManagementReportPdf([hashtable]$Data,[string]$OutPath,[string]$Version,[string]$Date){
+    $script:MR_PAGES=[System.Collections.Generic.List[string]]::new()
+    $script:MR_CUR=""; $script:MR_Y=$script:MR_TOP_Y
+    $script:MR_PAGE_NO=0; $script:MR_FOOTER=1
+    $script:MR_SECTION_ORDER=[System.Collections.Generic.List[string]]::new()
+    $script:MR_SEC_SEEN=@{}
+    if($null -eq $script:CHECKLIST_CAPTURED -or $script:CHECKLIST_CAPTURED.Count -eq 0){
+        $script:_PDF_PAGES=[System.Collections.Generic.List[string]]::new()
+        $script:_PDF_CUR=""; $script:_PDF_Y=$script:PDF_TOP_Y; $script:_PDF_ROW_INDEX=0
+        Render-Checklist $Data
+    }
+    $checklist=ConvertTo-ManagementChecklist
+    Initialize-ManagementCounts $checklist
     Mr-CoverLetter $Date $Version
     Mr-ExecutiveOverview
-    Mr-RenderChecklist $checklist
+    Mr-RenderControlAreas $checklist
     Mr-RenderActions
     Mr-Finish
-    Mr-WriteFile $OutPath
+    return (Mr-WriteFile $OutPath)
 }

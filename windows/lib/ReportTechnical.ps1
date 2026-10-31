@@ -45,6 +45,9 @@ $script:_PDF_PAGES=[System.Collections.Generic.List[string]]::new()
 $script:_PDF_CUR=""; $script:_PDF_Y=$script:PDF_TOP_Y
 $script:_PDF_ROW_INDEX=0; $script:DATA=$null
 $script:_NL = "`n"
+$script:CHECKLIST_ROWS=$null
+$script:CHECKLIST_CAPTURED=$null
+$script:CHECKLIST_CAPTURE_SECTION=""
 
 function Pdf-Rect([float]$x,[float]$y,[float]$w,[float]$h,[string]$color){
     $script:_PDF_CUR += "${color} rg$($script:_NL)${x} ${y} ${w} ${h} re f$($script:_NL)"
@@ -83,6 +86,16 @@ function Pdf-PlainLine([string]$t){
     $script:_PDF_Y = $script:_PDF_Y - 16
 }
 function Pdf-Row([string]$label,[string]$value,[string]$bkind,[string]$btext,[string]$note){
+    if($null -ne $script:CHECKLIST_ROWS){
+        [void]$script:CHECKLIST_ROWS.Add([pscustomobject]@{
+            section=$script:CHECKLIST_CAPTURE_SECTION
+            label=$label
+            value=$value
+            bkind=$bkind
+            btext=$btext
+            note=$note
+        })
+    }
     $rowH=16; if($note){$rowH=27}
     Pdf-Ensure $rowH
     $bg=$script:PDF_C_WHITE
@@ -155,7 +168,7 @@ function Build-TechnicalReport([hashtable]$Data,[string]$OutPath){
     Pdf-Rect 0 692 $script:PDF_PAGE_W 100 $script:PDF_C_NAVY
     Pdf-Text $script:PDF_MARGIN 754 "IceWarp Health Check Report" F2 22 $script:PDF_C_WHITE
     Pdf-Text $script:PDF_MARGIN 730 ("Based on IceWarp CheckList v{0}" -f $script:PDF_CHECKLIST_VERSION) F3 12 $script:PDF_C_WHITE
-    Pdf-Text $script:PDF_MARGIN 706 ("Host: {0}   Generated: {1}   Agent v{2}" -f $agentHost $agentTime $agentVer) F1 9.5 $script:PDF_C_WHITE
+    Pdf-Text $script:PDF_MARGIN 706 ("Host: {0}   Generated: {1}   Agent v{2}" -f $agentHost, $agentTime, $agentVer) F1 9.5 $script:PDF_C_WHITE
     $script:_PDF_Y=660
     $licType=$Data['icewarp.license.type']; if(-not $licType){$licType='unknown'}
     $licExp=$Data['icewarp.license.trial_expiration']
@@ -185,7 +198,7 @@ function Build-TechnicalReport([hashtable]$Data,[string]$OutPath){
     switch($overallStatus){ 'pass'{$bannerColor=$script:PDF_C_GREEN} 'warn'{$bannerColor=$script:PDF_C_AMBER} 'fail'{$bannerColor=$script:PDF_C_RED} }
     Pdf-Rect $script:PDF_MARGIN ($script:_PDF_Y-44) $script:PDF_CONTENT_W 44 $bannerColor
     Pdf-Text ($script:PDF_MARGIN+14) ($script:_PDF_Y-20) ("OVERALL: $($overallStatus.ToUpper())") F2 15 $script:PDF_C_WHITE
-    Pdf-Text ($script:PDF_MARGIN+14) ($script:_PDF_Y-36) ("{0} checks run  -  {1} failed  -  {2} warnings" -f $totalChecks $failCount $warnCount) F1 9.5 $script:PDF_C_WHITE
+    Pdf-Text ($script:PDF_MARGIN+14) ($script:_PDF_Y-36) ("{0} checks run  -  {1} failed  -  {2} warnings" -f $totalChecks, $failCount, $warnCount) F1 9.5 $script:PDF_C_WHITE
     $script:_PDF_Y = $script:_PDF_Y - 60
     Pdf-Text $script:PDF_MARGIN $script:_PDF_Y "Legend:" F2 8.5 $script:PDF_C_TEXT
     $lx=$script:PDF_MARGIN+46
@@ -225,6 +238,8 @@ function Render-Checklist([hashtable]$Data){
         return
     }
     $curSection=""
+    $script:CHECKLIST_ROWS=[System.Collections.Generic.List[object]]::new()
+    $script:CHECKLIST_CAPTURE_SECTION=""
     $lines=[System.IO.File]::ReadAllLines($checklistFile)
     foreach($rawLine in $lines){
         $line=$rawLine.Trim()
@@ -236,6 +251,7 @@ function Render-Checklist([hashtable]$Data){
         if($section -ne $curSection){
             Pdf-SectionHeader $section
             $curSection=$section
+            $script:CHECKLIST_CAPTURE_SECTION=$section
             $script:_PDF_ROW_INDEX=0
         }
         if($section -like "MySQL Server*"){
@@ -487,6 +503,9 @@ function Render-Checklist([hashtable]$Data){
             }
         }
     }
+    $script:CHECKLIST_CAPTURED=$script:CHECKLIST_ROWS
+    $script:CHECKLIST_ROWS=$null
+    $script:CHECKLIST_CAPTURE_SECTION=""
 }
 
 function Build-TechnicalAppendix([hashtable]$Data){
@@ -527,32 +546,39 @@ function Pdf-WriteFile([string]$OutPath){
     $P=$script:_PDF_PAGES.Count
     if($P -eq 0){ Write-Warning "build_pdf: nothing to render"; return $null }
     $F_REG=2+2*$P+1; $F_BOLD=2+2*$P+2; $F_OBL=2+2*$P+3
+    $nl=$script:_NL
     $offsets=@{}
     $sb=[System.Text.StringBuilder]::new()
-    [void]$sb.Append("%PDF-1.4`n")
-    $sb.Append("1 0 obj`n<< /Type /Catalog /Pages 2 0 R >>`nendobj`n")|Out-Null
-    $offsets[1]=0
+    [void]$sb.Append("%PDF-1.4$nl")
+    $offsets[1]=$sb.Length
+    [void]$sb.Append("1 0 obj$($nl)<< /Type /Catalog /Pages 2 0 R >>$($nl)endobj$($nl)")
     $kids=""
-    for($i=1;$i -le $P;$i++){ $kids+="$((2+i)) 0 R " }
-    $sb.Append("2 0 obj`n<< /Type /Pages /Kids [ ${kids}] /Count ${P} >>`nendobj`n")|Out-Null
-    $offsets[2]=0
+    for($i=1;$i -le $P;$i++){ $kids+="$(2+$i) 0 R " }
+    $offsets[2]=$sb.Length
+    [void]$sb.Append("2 0 obj$($nl)<< /Type /Pages /Kids [ ${kids}] /Count ${P} >>$($nl)endobj$($nl)")
     for($i=1;$i -le $P;$i++){
         $pageNum=$i+2; $contentNum=$i+2+$P
-        $sb.Append("${pageNum} 0 obj`n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $($script:PDF_PAGE_W) $($script:PDF_PAGE_H)] /Resources << /Font << /F1 ${F_REG} 0 R /F2 ${F_BOLD} 0 R /F3 ${F_OBL} 0 R >> >> /Contents ${contentNum} 0 R >>`nendobj`n")|Out-Null
+        $offsets[$pageNum]=$sb.Length
+        [void]$sb.Append("${pageNum} 0 obj$($nl)<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $($script:PDF_PAGE_W) $($script:PDF_PAGE_H)] /Resources << /Font << /F1 ${F_REG} 0 R /F2 ${F_BOLD} 0 R /F3 ${F_OBL} 0 R >> >> /Contents ${contentNum} 0 R >>$($nl)endobj$($nl)")
         $stream=$script:_PDF_PAGES[$i-1]
-        $sb.Append("${contentNum} 0 obj`n<< /Length $($stream.Length) >>`nstream`n${stream}endstream`nendobj`n")|Out-Null
+        $offsets[$contentNum]=$sb.Length
+        [void]$sb.Append("${contentNum} 0 obj$($nl)<< /Length $($stream.Length) >>$($nl)stream$($nl)${stream}endstream$($nl)endobj$($nl)")
     }
-    $sb.Append("${F_REG} 0 obj`n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`nendobj`n")|Out-Null
-    $sb.Append("${F_BOLD} 0 obj`n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>`nendobj`n")|Out-Null
-    $sb.Append("${F_OBL} 0 obj`n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>`nendobj`n")|Out-Null
+    $offsets[$F_REG]=$sb.Length
+    [void]$sb.Append("${F_REG} 0 obj$($nl)<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>$($nl)endobj$($nl)")
+    $offsets[$F_BOLD]=$sb.Length
+    [void]$sb.Append("${F_BOLD} 0 obj$($nl)<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>$($nl)endobj$($nl)")
+    $offsets[$F_OBL]=$sb.Length
+    [void]$sb.Append("${F_OBL} 0 obj$($nl)<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>$($nl)endobj$($nl)")
     $total=$F_OBL+1
     $xrefStart=$sb.Length
-    $sb.Append("xref`n0 ${total}`n")|Out-Null
-    $sb.Append("0000000000 65535 f `n")|Out-Null
+    [void]$sb.Append("xref$($nl)0 ${total}$($nl)")
+    [void]$sb.Append("0000000000 65535 f $($nl)")
     for($n=1;$n -le $F_OBL;$n++){
-        $sb.Append(sprintf "%010d 00000 n `n" $offsets[$n])|Out-Null
+        $off=[int]$offsets[$n]
+        [void]$sb.Append(("{0:D10} 00000 n $($nl)" -f $off))
     }
-    $sb.Append("trailer`n<< /Size ${total} /Root 1 0 R >>`nstartxref`n${xrefStart}`n%%EOF`n")|Out-Null
+    [void]$sb.Append("trailer$($nl)<< /Size ${total} /Root 1 0 R >>$($nl)startxref$($nl)${xrefStart}$($nl)%%EOF$($nl)")
     [System.IO.File]::WriteAllText($OutPath, $sb.ToString())
     return $OutPath
 }

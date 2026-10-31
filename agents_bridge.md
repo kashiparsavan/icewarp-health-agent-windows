@@ -507,3 +507,42 @@ mimic those Linux-specific values.
 - **Collectors:** 27.
 - **Commit:** `93842fa`.
 - **Tag:** `windows-v0.1.5` (0.1.4 was already released at `6f7a56d`).
+
+## RESULT_FOR_OMP
+
+TASK: Windows PDF report generation is complete. gent.ps1 -Report now
+writes both output/report.pdf (technical) and
+output/management_report.pdf (executive) alongside the JSON, using only
+PowerShell and a hand-rolled PDF writer (no external library). Committed
+and tagged windows-v0.1.6.
+
+| Artifact | Contents |
+|----------|----------|
+| windows/lib/ReportTechnical.ps1 | Cover page, health summary, full checklist (113 entries from config/checklist.conf.pdf), and collected-data appendix. Manual PDF content streams, Helvetica F1/F2/F3, correct per-object xref offsets. |
+| windows/lib/ReportManagement.ps1 | Executive cover letter, KPI overview (score, PASS/WARN/FAIL/INFO/N/A), one control-area page per checklist section, and a recommended-actions list. Reuses the technical engine's evaluated rows so both reports agree. |
+| windows/agent.ps1 | -Report calls Build-TechnicalReportPdf then Build-ManagementReportPdf; failures are logged without aborting the run. |
+
+**Key fixes during the port:**
+- -f format operands must be comma-separated (-f , , ); the
+  space-separated bash-style form is a parse error.
+- $((2+i)) is invalid PowerShell; replaced with $(2+).
+- sprintf is not a PowerShell command; replaced with "{0:D10}" -f.
+- Pdf-WriteFile / Mr-WriteFile were rewritten to emit real page
+  objects, content objects, font objects, and a correct xref table with
+  actual byte offsets.
+- Mr-Paragraph had a stray $h parameter; removed.
+- Mr-NewPage / Mr-Finish now skip empty content pages.
+- The management report builds its data model from the technical
+  checklist capture ($script:CHECKLIST_CAPTURED), grouping rows by
+  section and computing the score as PASS * 100 / (PASS + WARN + FAIL).
+
+**Verification:**
+- Pester: 28/28 passed.
+- Full gent.ps1 -Report: exit 0, 433 keys.
+- 
+eport.pdf: 159 KB, 18 pages, xref valid (42 objects, 0 bad offsets).
+- management_report.pdf: 46 KB, 18 pages, xref valid (43 objects,
+  0 bad offsets), 113 checks captured (matches checklist line count).
+- Both .ps1 files parse cleanly under PowerShell 5.1/7.
+
+**Release:** version  .1.6, tag windows-v0.1.6.
