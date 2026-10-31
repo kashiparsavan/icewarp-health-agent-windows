@@ -338,7 +338,7 @@ Describe 'Windows agent contract' {
     }
 
     It 'reads the Windows agent version from VERSION' {
-        Assert-Equal -Expected '0.1.4' -Actual (Get-AgentVersion -Root $script:agentRoot)
+        Assert-Equal -Expected '0.1.5' -Actual (Get-AgentVersion -Root $script:agentRoot)
     }
 
     It 'loads the example PSD1 configuration and rejects unknown keys' {

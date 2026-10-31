@@ -45,7 +45,7 @@ $ErrorActionPreference = 'Stop'
 $script:AgentRoot = $PSScriptRoot
 $script:ProjectRoot = Split-Path -Parent $script:AgentRoot
 $libRoot = Join-Path $script:AgentRoot 'lib'
-$requiredLibraries = @('Common.ps1', 'Logging.ps1', 'Config.ps1', 'IceWarpTool.ps1', 'Json.ps1', 'Health.ps1')
+$requiredLibraries = @('Common.ps1', 'Logging.ps1', 'Config.ps1', 'IceWarpTool.ps1', 'Json.ps1', 'Health.ps1', 'ReportTechnical.ps1', 'ReportManagement.ps1')
 
 foreach ($library in $requiredLibraries) {
     $libraryPath = Join-Path $libRoot $library
@@ -125,6 +125,23 @@ try {
 
         if ($Report) {
             Write-AgentReport -Context $context -CollectorResults $collectorResults
+            # Generate PDF reports
+            $pdfLib = Join-Path $libRoot 'ReportTechnical.ps1'
+            if (Test-Path -LiteralPath $pdfLib -PathType Leaf) { . $pdfLib }
+            $pdfLib2 = Join-Path $libRoot 'ReportManagement.ps1'
+            if (Test-Path -LiteralPath $pdfLib2 -PathType Leaf) { . $pdfLib2 }
+            $outDir = Split-Path $config.OutputJson -Parent
+            if (-not $outDir) { $outDir = '.' }
+            $techOut = Join-Path $outDir 'report.pdf'
+            $mgmtOut = Join-Path $outDir 'management_report.pdf'
+            if (Get-Command Build-TechnicalReportPdf -ErrorAction SilentlyContinue) {
+                Build-TechnicalReportPdf -Data $context.Data -OutPath $techOut
+                Write-AgentLog -Level INFO -Message "Technical PDF written to $techOut"
+            }
+            if (Get-Command Build-ManagementReportPdf -ErrorAction SilentlyContinue) {
+                Build-ManagementReportPdf -Data $context.Data -OutPath $mgmtOut -Version $agentVersion -Date (Get-Date -Format 'yyyy-MM-dd')
+                Write-AgentLog -Level INFO -Message "Management PDF written to $mgmtOut"
+            }
         }
 
         $failedCollectors = @($collectorResults | Where-Object { $_.Status -ne 'ok' })

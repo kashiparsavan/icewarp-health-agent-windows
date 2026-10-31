@@ -1,0 +1,113 @@
+DNS & Mail Flow Verification~Check PTR~F~dns.ptr.exists~Verify reverse DNS record exists
+DNS & Mail Flow Verification~Check SPF~F~dns.spf.found~SPF record exists for domain
+DNS & Mail Flow Verification~Check DKIM~F~dns.dkim.found~DKIM record exists
+DNS & Mail Flow Verification~Check DMARC~F~dns.dmarc.found~DMARC record exists
+DNS & Mail Flow Verification~Check TLS and Start TLS~F~smtp.starttls_live_test~STARTTLS is available on port 25
+DNS & Mail Flow Verification~Check DNS Server~V~dns.configured_server~Configured DNS servers
+DNS & Mail Flow Verification~Test DNS Lookup~F~dns.lookup_test.ok~Basic DNS lookup test
+DNS & Mail Flow Verification~Resolver External Test~F~dns.resolver.external_test_ok~External resolver test
+Logging~Enable Logging - Authentication~L~logging.auth_log_level~Authentication logging (should be enabled)
+Logging~Enable Logging - Maintenance~L~logging.maintenance_log_level~Maintenance logging (should be enabled)
+Logging~Enable MailFlow Log~L~logging.mailqueue.level~Mail flow logging
+Logging~Enable SQL Failed Logs~L~logging.sql_log_type~SQL failed query logging
+Backup, Watchdog and Monitoring~Enable System Backup~B~icewarp.backup.auto_enabled~Main automatic backup enable
+Backup, Watchdog and Monitoring~Last Backup Date and Time~V~icewarp.backup.last_time~Last backup timestamp
+Backup, Watchdog and Monitoring~Enable Database Backup - Accounts~B~backup.db.accounts.enabled~Accounts database backup
+Backup, Watchdog and Monitoring~Enable Database Backup - AntiSpam~B~backup.db.as.enabled~Anti-Spam database backup
+Backup, Watchdog and Monitoring~Enable Database Backup - GroupWare~B~backup.db.gw.enabled~GroupWare database backup
+Backup, Watchdog and Monitoring~Enable Database Backup - Directory Cache~B~backup.db.cache.enabled~Directory Cache backup (optional)
+Backup, Watchdog and Monitoring~Backup Emails~Z~backup.emails.enabled~Backup emails option (WARN if disabled)
+Backup, Watchdog and Monitoring~Enable System Watchdog~B~watchdog.control~Main watchdog control
+Backup, Watchdog and Monitoring~Remote Server Watchdog~V~watchdog.remoteserver.enable~Remote server watchdog (INFO)
+Backup, Watchdog and Monitoring~Enable System Monitor (Mem/Disk/CPU)~B~monitor.enabled~System monitoring
+Migration Safety~Migration Active~R~icewarp.migration.active~Migration active flag
+Migration Safety~Migration Source Server~V~icewarp.migration.server~Migration source server
+Migration Safety~Migration Ever Started~M~icewarp.migration.stat_started~Migration has ever started
+Migration Safety~Migration Has Errors~R~icewarp.migration.has_errors~Migration has errors
+Storage, Certificates and Services~Check for Storage Locations~V~icewarp.path.mail~Storage locations check
+Storage, Certificates and Services~Check for Certificates~V~icewarp.ssl.expiration~SSL certificate expiration
+Storage, Certificates and Services~RBL Valli Check (is our IP blacklisted)~R~security.rbl_self_check.listed~IP blacklist check
+Storage, Certificates and Services~Enable Full Text Search Services~P~fulltext.enabled~Full text search (should be OFF)
+Storage, Certificates and Services~Reject if SMTP AUTH Different from Sender~B~smtp.reject_auth_sender_mismatch~Reject auth/sender mismatch
+Storage, Certificates and Services~2FA~R~security.login.2fa_bypass_enabled~2FA bypass status
+Storage, Certificates and Services~Daily Send Email limit~Z~domain.primary.daily_send_messages_limit~Daily send limit (0=unlimited)
+SMTP Delivery Settings~Max Message Size (MB)~V~smtp.max_message_size.mb~Max message size in MB
+SMTP Delivery Settings~Delivery Reports~B~smtp.delivery_reports_enabled~Delivery reports
+SMTP Delivery Settings~Use TLS/SSL (Secured Delivery)~B~smtp.use_tls_ssl~TLS/SSL for delivery
+SMTP Delivery Settings~Process Incoming Messages in MDA Queue~B~smtp.use_incoming_queue~MDA queue processing
+SMTP Delivery Settings~Use MDA Queue for Internal Message Delivery~B~smtp.mda_internal_delivery~MDA internal delivery
+SMTP Delivery Settings~Maximum Number of Simultaneous Threads~V~smtp.incoming_queue_threads~Max threads (Expected: 10)
+SMTP Delivery Settings~Hide IP Address from Received for All Messages~B~smtp.hide_ip~Hide IP in Received
+SMTP Delivery Settings~Hide Server Version~B~smtp.hide_server_version~Hide server version
+SMTP Protocol Hardening~Require HELO/EHLO~B~smtp.require_helo_ehlo~Require HELO/EHLO
+SMTP Protocol Hardening~Add Return-Path to All Messages~B~smtp.add_return_path~Add Return-Path
+SMTP Protocol Hardening~Dedupe Email Messages~B~smtp.dedupe~Deduplication
+SMTP Protocol Hardening~Relay Only if Originators Domain is Local~B~smtp.relay.local_domain_only~Relay local only
+SMTP Protocol Hardening~Process SMTP~B~security.intrusion.process_smtp~SMTP intrusion processing
+SMTP Protocol Hardening~Process POP3/IMAP~B~security.intrusion.process_pop3_imap~POP3/IMAP intrusion processing
+SMTP Protocol Hardening~Add rDNS Result to Received for All Messages~B~smtp.rdns_in_received~Add rDNS to Received
+SMTP Protocol Hardening~Set Directory Cache Schedule~B~directory_cache.scheduled~Directory cache schedule
+SMTP Protocol Hardening~Change Admin URL~B~admin.url_changed_from_default~Admin URL changed
+Intrusion Prevention - Block Rules~Block IP - Connections in 1 Minute~V~security.intrusion.block_connections_per_minute.value~Expected: 50
+Intrusion Prevention - Block Rules~Block IP - Unknown User Delivery Count~V~security.intrusion.block_unknown_user_count.value~Expected: 5
+Intrusion Prevention - Block Rules~Block IP - Denied for Relaying Too Often~V~security.intrusion.block_relay_denied_count.value~Expected: 5
+Intrusion Prevention - Block Rules~Block IP - Exceeds RSET Session Count~V~security.intrusion.block_rset_count.value~Expected: 5
+Intrusion Prevention - Block Rules~Block IP - Message Spam Score~V~security.intrusion.block_spam_score.value~Expected: 9.00
+Intrusion Prevention - Block Rules~Block IP - Listed on DNSBL~B~security.intrusion.block_dnsbl_listed.enabled~DNSBL blocking
+Intrusion Prevention - Block Rules~Block IP - Exceeds Failed Login Attempts~V~security.intrusion.block_failed_logins.value~Expected: 5
+Intrusion Prevention - Block Rules~Amount of Time IP is Blocked (minutes)~V~security.intrusion.block_duration_minutes~Expected: 360
+Intrusion Prevention - Block Rules~Refuse Blocked IP Address~B~security.intrusion.refuse_blocked_ip~Refuse blocked IP
+Intrusion Prevention - Block Rules~Close Blocked Connection~B~security.intrusion.close_blocked_connection~Close blocked connection
+Intrusion Prevention - Block Rules~Close All Other Connections from Blocked IP~B~security.intrusion.close_all_other_connections~Close other connections
+Intrusion Prevention - Block Rules~Cross Session Processing~B~security.intrusion.cross_session_processing~Cross session processing
+Rejection Rules and Access~Use DNSBL~B~security.dnsbl.use~Use DNSBL
+Rejection Rules and Access~Close Connections for DNSBL Sessions~B~security.dnsbl.close_sessions~Close DNSBL sessions
+Rejection Rules and Access~Use IP Reputation~B~security.ip_reputation.use~Use IP reputation
+Rejection Rules and Access~Reject if Originators IP has no rDNS~B~security.reject_no_rdns~Reject no rDNS
+Rejection Rules and Access~Reject if Originators Domain Does Not Exist~B~security.reject_domain_no_mx~Reject domain no MX
+Rejection Rules and Access~Reject if Originators Domain is Local and Not Authorized~B~smtp.relay.local_domain_only~Reject unauthorized local
+Rejection Rules and Access~Set customers-stat@parsavan.com~V~monitor.alert_email~Alert email
+Rejection Rules and Access~Disable AntiSpam Live~D~security.antispam_live.enabled~AntiSpam Live (0=disabled good)
+Rejection Rules and Access~Remove Old AntiSpam Folders~V~security.cyren_folder.status~Old AntiSpam folders
+Rejection Rules and Access~Password Policy Min Length~V~security.password_policy.min_length~Min password length
+Rejection Rules and Access~Set Admin Email~V~monitor.alert_email~Admin email
+Rejection Rules and Access~Change Admin Port~B~admin.port_changed_from_default~Admin port changed
+Rejection Rules and Access~Block Outgoing Port 9001~B~security.port_9001_egress.blocked~Port 9001 egress blocked
+Archive Settings~Archive Active~B~archive.active~Archive feature (should be enabled)
+Archive Settings~Archive to Directory~V~icewarp.archive.default~Archive directory path
+Archive Settings~Integrate Archive with IMAP Folder~B~archive.integrate_with_imap~Integrate archive with IMAP folder
+Archive Settings~Do Not Archive Spam~B~archive.do_not_archive_spam~Do not archive spam messages
+Protocol and Access Hardening~Disable VRFY~B~smtp.deny_vrfy~VRFY command (1=disabled good)
+Protocol and Access Hardening~Disable DIGEST-MD5~R~security.digest_md5.enabled~DIGEST-MD5 (false=good)
+Protocol and Access Hardening~Session Timeout~V~icewarp.session_timeout_minutes~Session timeout
+Protocol and Access Hardening~Enable SSL/TLS~B~smtp.use_tls_ssl~SSL/TLS enabled
+Protocol and Access Hardening~Disable Cloud Features~D~icewarp.cloud_api.autoconfigure~Cloud features (0=disabled good, 1=enabled warn)
+Protocol and Access Hardening~Disable IMAP~V~service.imap.active~IMAP service status
+Protocol and Access Hardening~Disable POP3~V~service.pop3.active~POP3 service status
+Protocol and Access Hardening~Watchdog - SMTP~B~watchdog.smtp~SMTP service watchdog
+Protocol and Access Hardening~Watchdog - POP3/IMAP~B~watchdog.pop3~POP3/IMAP service watchdog
+Protocol and Access Hardening~Watchdog - IM/VoIP~B~watchdog.im~IM/VoIP service watchdog
+Protocol and Access Hardening~Watchdog - GroupWare~B~watchdog.gw~GroupWare service watchdog
+Protocol and Access Hardening~Watchdog Interval~V~watchdog.interval_minutes~Watchdog check interval
+APP OS / Infrastructure~APP OS Version~V~general.os.pretty~OS version
+APP OS / Infrastructure~Disk (Total GB / Used %)~V~storage.root_fs.total_gb~Disk usage (>=80% WARN, >=95% CRITICAL)
+APP OS / Infrastructure~CPU Usage~V~os.cpu.load15~CPU load 15-min (>50% WARN, >95% CRITICAL)
+APP OS / Infrastructure~RAM (Total KB / Available KB)~V~os.memory.total_kb~RAM usage (>40% WARN, >90% CRITICAL)
+APP OS / Infrastructure~APP OS Last Update~V~os.last_update_date~OS update age (<7d PASS, 7-30d WARN, >30d CRITICAL)
+APP OS / Infrastructure~Repository Access~B~os.repository_access~Package repo access
+APP OS / Infrastructure~Time Sync (OS-level NTP)~B~os.time_sync.synced~NTP sync
+APP OS / Infrastructure~Swap Usage (7 days)~V~system.swap.status~Swap usage in last 7 days
+Database~Database Type~V~database.type~Database type (sqlite=WARN, mysql=PASS)
+Database~Database Scope~V~database.scope~Database scope
+Database~MySQL Service Active~V~mysql.service_active~MySQL service active
+Database~MySQL Version~V~mysql.version_raw~MySQL version
+Database~MySQL OS version~L~general.os.pretty~MySQL OS version
+Database~MySQL Disk (Total GB / Used %)~L~storage.root_fs.total_gb~MySQL disk usage
+Database~MySQL CPU Usage~L~os.cpu.load1~MySQL CPU usage
+Database~MySQL RAM (Total KB / Available KB)~L~os.memory.total_kb~MySQL RAM usage
+Database~MySQL OS Last Update~L~os.last_update_date~MySQL OS update
+Database~MySQL Repository Access~L~os.repository_access~MySQL repo access
+Database~MySQL Time Sync~L~os.time_sync.synced~MySQL NTP sync
+MySQL Server (Remote DB)~MySQL Host~V~mysql.host~MySQL host
+MySQL Server (Remote DB)~MySQL Reachable (port 3306)~B~mysql.reachable~MySQL port reachable
+MySQL Server (Remote DB)~OS-level Stats~V~mysql.os_note~MySQL OS stats
