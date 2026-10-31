@@ -228,6 +228,29 @@ Write results under `## RESULT_FOR_OMP` when done. Wait for my review.
 - [11:50] Full `agent.ps1 -Report` acceptance run exited 0 and wrote 334 keys, including all 84 `health.*` keys and 8 `monitor.*` keys.
 - [11:51] Schema validation against the 432-key fixture reported 0 key/type violations; summary was fail (6 failed, 3 warnings) on this non-IceWarp host, as expected.
 
+### Part 4 - Fix 8 Claude-identified JSON bugs (v0.1.7)
+[STATUS: DONE]
+**Worker:** OpenCode
+**Started:** 2026-10-31 14:00
+**Finished:** 2026-10-31 14:22
+
+**Commit:** `964aa28` &middot; **Tag:** `windows-v0.1.7`
+
+**What was fixed:**
+1. **Security / DSN redaction** &mdash; added `Redact-DatabaseDsn` to `windows/lib/Common.ps1` and applied it in `DatabaseType.ps1`, `DirectoryCache.ps1` and `BackupArchive.ps1` (all four `backup.db.*.target_dsn` keys). Passwords in `key=value` and `db;user;pass;host` DSNs are replaced with `***`; SQLite file DSNs are left untouched.
+2. **Date normalization** &mdash; added `Normalize-ToIsoDate` to `Common.ps1` and applied it at every date-emitting collector (`OsStorage.ps1` `os.last_update_date`, `Antispam.ps1`, `Antivirus.ps1`). US-format dates like `10/25/2026` now serialize as `YYYY-MM-DD`. Live value: `os.last_update_date = 2026-10-19`.
+3. **CPU comparison** &mdash; `os.cpu.load1` is already a 0-100 percentage on Windows, so `Invoke-HealthCpuCheck` now compares it directly against `monitor.cpu.threshold_percent` instead of against `cores * threshold / 100`. Message: `1-min load (31%) within threshold (50%)`.
+4. **OS version type** &mdash; `general.os.version` now serializes as a JSON number (`10.0`, type `Double`), matching the schema fixture.
+5. **DNS primary domain** &mdash; `DnsMailFlow.ps1` no longer falls back to `COMPUTERNAME`/server hostname for SPF/DKIM/DMARC/PTR lookups; it uses the configured primary domain only, and the DKIM `Get-IceWarpDomainSetting` call is guarded against an empty hostname.
+6. **TLS missing cert** &mdash; when `icewarp.ssl.days_left` is unavailable, a passing delivery result is now downgraded to `warn` (was `pass`).
+7. **Disk roll-up** &mdash; a collector `WARNING` status on any monitored disk now forces `health.disk.overall.result` to `warn` (was `pass`).
+8. **INFO &rarr; ok/warn** &mdash; the two `health.backup.db.cache` `info` results became `ok`/`warn`; all four watchdog `INFO` statuses became `warn`; `Set-HealthResult` ValidateSet and `Get-HealthWorst` now accept `ok`. Zero `info`/`INFO` values remain in the JSON.
+
+**Acceptance:**
+- `pwsh -File .\windows\agent.ps1 -Report` exits 0; both PDFs written (`report.pdf`, `management_report.pdf`).
+- Pester: `Passed: 28 Failed: 0 Skipped: 0 Pending: 0 Inconclusive: 0`.
+- Schema fixture: 0 key/type violations; 433 keys (85 `health.*`, 8 `monitor.*`).
+
 ## TASK-002 (duplicate assignment - preserved for history)
 Status: ASSIGNED
 **Note:** This is a duplicate of the TASK-002 assignment above, received
