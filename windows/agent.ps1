@@ -135,7 +135,7 @@ try {
             $techOut = Join-Path $outDir 'report.pdf'
             $mgmtOut = Join-Path $outDir 'management_report.pdf'
             if (Get-Command Build-TechnicalReportPdf -ErrorAction SilentlyContinue) {
-                Build-TechnicalReportPdf -Data $context.Data -OutPath $techOut
+                Build-TechnicalReportPdf -Data $context.Data -OutPath $techOut -CollectorResults $collectorResults
                 Write-AgentLog -Level INFO -Message "Technical PDF written to $techOut"
             }
             if (Get-Command Build-ManagementReportPdf -ErrorAction SilentlyContinue) {
