@@ -37,10 +37,10 @@ if ($dbType -ne 'mysql') {
 $data['mysql.applicable'] = $true
 $scope = [string]$Context.Data['database.scope']
 if ([string]::IsNullOrEmpty($scope)) { $scope = 'unknown' }
-$host = [string]$Context.Data['database.host']
+$dbHost = [string]$Context.Data['database.host']
 
 $data['mysql.scope'] = $scope
-$data['mysql.host'] = $host
+$data['mysql.host'] = $dbHost
 
 if ($scope -eq 'local') {
     $serviceActive = 0
@@ -89,7 +89,7 @@ if ($scope -eq 'local') {
     $data['mysql.os_version'] = $osVersion
     $data['mysql.os_note'] = 'same host as IceWarp - see general.os.* / os.* / storage.* for OS/disk/CPU/RAM detail'
 } elseif ($scope -eq 'remote') {
-    $data['mysql.os_note'] = 'remote MySQL server - OS/disk/CPU/RAM/repo/time-sync require running this agent on {0} directly, or SSH access this agent does not have' -f $host
+    $data['mysql.os_note'] = 'remote MySQL server - OS/disk/CPU/RAM/repo/time-sync require running this agent on {0} directly, or SSH access this agent does not have' -f $dbHost
 } else {
     $data['mysql.os_note'] = 'database scope could not be determined (see database.* keys)'
 }

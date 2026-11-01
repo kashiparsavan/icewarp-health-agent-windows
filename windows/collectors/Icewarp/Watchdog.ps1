@@ -71,10 +71,13 @@ function Get-WatchdogDiskUsage {
     $pct = 0
     $ok = $false
     try {
+        # Win32_LogicalDisk exposes Size and FreeSpace (bytes); there is no
+        # TotalSize property.
         $disk = Get-CimInstance -ClassName Win32_LogicalDisk -ErrorAction Stop |
             Where-Object { $_.DeviceID -eq 'C:' } | Select-Object -First 1
-        if ($disk -and $disk.TotalSize -gt 0) {
-            $pct = [Math]::Round((($disk.TotalSize - $disk.FreeSpace) / $disk.TotalSize) * 100, 2)
+        if ($disk -and $null -ne $disk.Size -and [double]$disk.Size -gt 0) {
+            $size = [double]$disk.Size
+            $pct = [Math]::Round((($size - [double]$disk.FreeSpace) / $size) * 100, 2)
             $ok = $true
         }
     } catch { }
@@ -85,15 +88,16 @@ function Get-WatchdogDiskUsage {
 function Get-WatchdogMemoryUsage {
     [CmdletBinding()]
     param()
-    # Win32_OperatingSystem reports physical memory in kilobytes, so the
-    # values are used directly (no /1024 conversion).
+    # Win32_OperatingSystem reports TotalVisibleMemorySize and
+    # FreePhysicalMemory in kilobytes, so the values are used directly.
+    # (TotalPhysicalMemory lives on Win32_ComputerSystem, in bytes.)
     $totalKb = 0
     $availKb = 0
     $ok = $false
     try {
         $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
-        if ($os -and $os.TotalPhysicalMemory) {
-            $totalKb = [long]$os.TotalPhysicalMemory
+        if ($os -and $null -ne $os.TotalVisibleMemorySize) {
+            $totalKb = [long]$os.TotalVisibleMemorySize
             $availKb = [long]$os.FreePhysicalMemory
             $ok = $totalKb -gt 0
         }
@@ -122,10 +126,10 @@ $disk = Get-WatchdogDiskUsage
 if ($disk.Ok) {
     if ($disk.Percent -ge 80) {
         $data['watchdog.disk.status'] = 'WARN'
-        $data['watchdog.disk.message'] = "Disk usage is $disk.Percent% (threshold: 80%)"
+        $data['watchdog.disk.message'] = "Disk usage is $($disk.Percent)% (threshold: 80%)"
     } else {
         $data['watchdog.disk.status'] = 'PASS'
-        $data['watchdog.disk.message'] = "Disk usage is $disk.Percent% (OK)"
+        $data['watchdog.disk.message'] = "Disk usage is $($disk.Percent)% (OK)"
     }
 } else {
     $data['watchdog.disk.status'] = 'warn'

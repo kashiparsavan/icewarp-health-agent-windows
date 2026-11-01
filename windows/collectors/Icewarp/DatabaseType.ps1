@@ -51,12 +51,13 @@ if ($conn -imatch '\.db(;|$)') {
 
 if ($conn -imatch 'mysql|mariadb') {
     $data['database.type'] = 'mysql'
-    $host = ''
+    # $host is a read-only automatic variable in PowerShell; use $dbHost.
+    $dbHost = ''
     if ($conn -match '(?i)(?:host|server)\s*=\s*([^;]+)') {
-        $host = $Matches[1].Trim()
+        $dbHost = $Matches[1].Trim()
     }
-    $data['database.host'] = $host
-    if ([string]::IsNullOrEmpty($host) -or $host -in @('127.0.0.1', 'localhost', '::1')) {
+    $data['database.host'] = $dbHost
+    if ([string]::IsNullOrEmpty($dbHost) -or $dbHost -in @('127.0.0.1', 'localhost', '::1')) {
         $data['database.scope'] = 'local'
         $data['database.mysql_server_section_applicable'] = $false
     } else {

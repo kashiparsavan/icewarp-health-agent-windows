@@ -338,7 +338,11 @@ Describe 'Windows agent contract' {
     }
 
     It 'reads the Windows agent version from VERSION' {
-        Assert-Equal -Expected '0.1.6' -Actual (Get-AgentVersion -Root $script:agentRoot)
+        # Read the expected value from windows\VERSION so a version bump never
+        # requires editing this test.
+        $expected = (Get-Content -LiteralPath (Join-Path $script:agentRoot 'VERSION') -Raw).Trim()
+        Assert-True -Condition ($expected -match '^\d+\.\d+\.\d+$') -Because 'VERSION must be MAJOR.MINOR.PATCH'
+        Assert-Equal -Expected $expected -Actual (Get-AgentVersion -Root $script:agentRoot)
     }
 
     It 'loads the example PSD1 configuration and rejects unknown keys' {
@@ -1096,5 +1100,64 @@ Loading domains...
         Assert-Equal -Expected '5120' -Actual $fallback['monitor.disk.alert_below_mb']
         Assert-Equal -Expected '50' -Actual $fallback['monitor.cpu.threshold_percent']
         Assert-Equal -Expected '300' -Actual $fallback['monitor.web_threadpool.alert_seconds']
+    }
+
+    It 'redacts DSN passwords in positional and key=value forms' {
+        Assert-Equal -Expected 'accounts;icewarp;***;db1;3306' -Actual (Redact-DatabaseDsn -Value 'accounts;icewarp;secret;db1;3306')
+        $keyValue = Redact-DatabaseDsn -Value 'Driver={MySQL ODBC 8.0};Server=db1.example.com;Database=accounts;Uid=icewarp;Pwd=secret;'
+        Assert-True -Condition ($keyValue -notmatch 'secret') -Because ('Password leaked: {0}' -f $keyValue)
+        Assert-True -Condition ($keyValue -match 'Pwd=\*\*\*') -Because ('Pwd not masked: {0}' -f $keyValue)
+        Assert-True -Condition ($keyValue -match 'Database=accounts') -Because ('Non-secret field was altered: {0}' -f $keyValue)
+    }
+
+    It 'DatabaseType classifies a remote MySQL key=value DSN without touching $host' {
+        . $script:mockFunctions
+
+        $global:AgentTestSettingOverrides['C_System_Storage_Accounts_ODBCConnString_Real'] = 'Driver={MySQL ODBC 8.0};Server=db1.example.com;Database=accounts;Uid=icewarp;Pwd=secret;'
+        $config = Get-AgentConfig -Root $script:agentRoot
+        $config.LogDirectory = Join-Path $script:tempRoot 'logs'
+        $context = Initialize-AgentContext -Root $script:agentRoot -Config $config -Version '0.1.0'
+        $collectorPath = Join-Path $script:agentRoot 'collectors\Icewarp\DatabaseType.ps1'
+
+        $data = & $collectorPath -Context $context
+        Assert-Equal -Expected 'mysql' -Actual $data['database.type']
+        Assert-Equal -Expected 'remote' -Actual $data['database.scope']
+        Assert-Equal -Expected 'db1.example.com' -Actual $data['database.host']
+        Assert-Equal -Expected $true -Actual $data['database.mysql_server_section_applicable']
+        Assert-True -Condition ([string]$data['database.connection_string_raw'] -notmatch 'secret') -Because 'DSN password leaked.'
+    }
+
+    It 'builds both PDF reports on the running PowerShell version' {
+        $libRoot = Join-Path $script:agentRoot 'lib'
+        . (Join-Path $libRoot 'ReportTechnical.ps1')
+        . (Join-Path $libRoot 'ReportManagement.ps1')
+
+        $config = Get-AgentConfig -Root $script:agentRoot
+        $config.LogDirectory = Join-Path $script:tempRoot 'logs'
+        $context = Initialize-AgentContext -Root $script:agentRoot -Config $config -Version '0.1.0'
+        $data = $context.Data
+        $data['os.memory.total_kb'] = '8388608'
+        $data['os.memory.available_kb'] = '6291456'
+        $data['os.cpu.load1'] = '10'
+        $data['os.cpu.load15'] = '10'
+        $data['os.cpu.count'] = '4'
+        $data['monitor.cpu.threshold_percent'] = '50'
+        $data['os.last_update_date'] = (Get-Date).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+        Invoke-HealthEvaluation -Data $data
+
+        $script:CHECKLIST_CAPTURED = $null
+        $techPath = Join-Path $script:tempRoot 'report.pdf'
+        $mgmtPath = Join-Path $script:tempRoot 'management_report.pdf'
+        [void](Build-TechnicalReportPdf -Data $data -OutPath $techPath)
+        [void](Build-ManagementReportPdf -Data $data -OutPath $mgmtPath -Version '0.1.0' -Date '2026-11-01')
+
+        foreach ($pdf in @($techPath, $mgmtPath)) {
+            Assert-True -Condition (Test-Path -LiteralPath $pdf -PathType Leaf) -Because ('PDF not written: {0}' -f $pdf)
+            $text = [System.IO.File]::ReadAllText($pdf)
+            Assert-True -Condition $text.StartsWith('%PDF-1.4') -Because ('Missing PDF header: {0}' -f $pdf)
+            Assert-True -Condition ($text.TrimEnd().EndsWith('%%EOF')) -Because ('Missing PDF trailer: {0}' -f $pdf)
+        }
+        # The checklist file must actually be found (not the "not found" fallback line).
+        Assert-True -Condition ([System.IO.File]::ReadAllText($techPath) -notmatch 'Checklist file not found') -Because 'checklist.conf.pdf was not resolved.'
     }
 }

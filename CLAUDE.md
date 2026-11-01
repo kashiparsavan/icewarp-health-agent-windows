@@ -6,7 +6,7 @@
 
 ### Key Characteristics
 - **Platform:** Windows Server 2012 R2 or later, Windows 10/11
-- **Version:** 0.1.5 (Windows-specific, independent of Linux)
+- **Version:** 0.1.8 (Windows-specific, independent of Linux)
 - **Runtime:** Windows PowerShell 5.1 — no Bash, no Linux dependencies
 - **Schema:** 432-key flat dotted namespace in `output/health.json` (parity with Linux)
 - **Outputs:**
@@ -167,7 +167,7 @@ backup, mail_flow, tls, access, threat, resources, os_update, monitoring, databa
 
 ```
 icewarp-health-agent-windows/
-├── VERSION                     # Windows agent version (0.1.5)
+├── VERSION                     # Windows agent version (0.1.8)
 ├── CLAUDE.md                   # This file
 ├── README.md                   # User documentation
 ├── CHANGELOG.md                # Windows version history
@@ -418,7 +418,7 @@ See `docs/api-windows-vs-linux-v14.3.0.13.md` for full comparison.
 # Run full Pester suite
 .\windows\tests\Run-Tests.ps1
 
-# Expected output: 28/28 tests passed
+# Expected output: 31/31 tests passed
 # Full agent run: exit 0, 433 keys, 0 schema violations
 ```
 
@@ -455,6 +455,9 @@ For every intentional change, update:
 ### Version History
 | Version | Date | Notes |
 |---|---|---|
+| 0.1.8 | 2026-11-01 | PS 5.1 PDF fix (Join-Path), $host rename, DSN key=value password leak, Watchdog WMI properties, version test, changelog backfill, audit docs |
+| 0.1.7 | 2026-10-31 | 8 JSON fixes: DSN redaction, ISO dates, CPU %, os.version number, primary-domain DNS, TLS missing-cert warn, disk roll-up, INFO -> ok/warn |
+| 0.1.6 | 2026-10-31 | Technical and management PDF reports (PowerShell 7 only until 0.1.8) |
 | 0.1.5 | 2026-10-28 | Fixed Watchdog summaries, CPU double-count, Antivirus fallback, DNS mail flow domain, path source |
 | 0.1.4 | 2026-10-28 | Dynamic domain keys, 433 keys total |
 | 0.1.3 | 2026-10-28 | 17 new collectors, 430 of 432 keys |
@@ -505,7 +508,7 @@ For every intentional change, update:
 
 ---
 
-**Last Updated:** 2026-10-31  
-**Agent Version:** 0.1.5  
+**Last Updated:** 2026-11-01  
+**Agent Version:** 0.1.8  
 **Checklist Version:** 1.14  
 **Platform:** Windows PowerShell 5.1

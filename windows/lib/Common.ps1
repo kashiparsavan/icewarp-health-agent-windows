@@ -99,7 +99,10 @@ function Redact-DatabaseDsn {
     # Positional DSN: "dbname;user;password;host;port" - the password is the
     # third field (index 2). Field 1 is the user, which is also sensitive in
     # some deployments, but the schema only flags the password.
-    if ($v -match '^[^;]+;[^;]+;[^;]+;') {
+    # Positional fields never contain '='; a key=value DSN such as
+    # "Driver=...;Server=...;Database=...;Pwd=..." must use the branch below,
+    # otherwise the wrong field is masked and the password leaks.
+    if ($v -match '^[^;=]+;[^;=]+;[^;=]+;') {
         $parts = $v -split ';', 4
         if ($parts.Length -ge 3) {
             $parts[2] = '***'

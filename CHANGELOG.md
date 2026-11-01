@@ -3,15 +3,125 @@
 All notable changes to the Windows implementation are documented here.
 The Linux agent keeps its own repository and changelog.
 
-## [Unreleased]
+## [0.1.8] - 2026-11-01
+
+Bug-fix release from the project audit (`docs/03-CODE-AUDIT.md`).
+
+### Fixed
+- **PDF reports on Windows PowerShell 5.1 (B-01, critical).**
+  `ReportTechnical.ps1` used `Join-Path` with several child paths. That form
+  only exists in PowerShell 6+, so on 5.1 `agent.ps1 -Report` exited 1 and
+  produced no PDFs. The calls are now nested, and both `report.pdf` and
+  `management_report.pdf` are generated on 5.1.
+- **`$host` assignments (B-03).** `DatabaseType.ps1` and `MySQL.ps1`
+  assigned to the read-only automatic variable `$host`, so the database
+  collector threw on any MySQL/MariaDB `Server=` DSN. The variable is now
+  `$dbHost`. A `mysql.os_note` message that formatted `$host` (the PowerShell
+  host object) now uses the database host.
+- **DSN password leak (Rule 3.7).** `Redact-DatabaseDsn` treated any
+  key=value DSN with three or more fields as a positional DSN. It masked the
+  wrong field and left `Pwd=...` in `health.json`. Positional detection now
+  requires fields without `=`.
+- **Watchdog WMI properties (B-05, B-06).** The disk summary read
+  `Win32_LogicalDisk.TotalSize` (the property is `Size`). The memory summary
+  read `Win32_OperatingSystem.TotalPhysicalMemory` (the property is
+  `TotalVisibleMemorySize`, in KB). Both summaries reported "not available"
+  on every host; they now report real percentages.
+- **Watchdog disk message (B-07).** `"$disk.Percent%"` rendered as
+  `System.Collections.Hashtable.Percent%`; it now uses `$($disk.Percent)`.
+
+### Removed
+- `windows/lib/Report.ps1`: a dead, never-loaded duplicate of both PDF
+  renderers that carried the same `Join-Path` and `$host` bugs and had LF
+  line endings (B-37).
+
+### Tests
+- The version test reads the expected value from `windows/VERSION` rather
+  than a hard-coded string (B-40).
+- New tests: DSN redaction (positional and key=value), DatabaseType with a
+  remote MySQL key=value DSN, and building both PDFs on the running
+  PowerShell version.
 
 ### Documentation
-- Added the full project audit under `docs/`: `01-PROJECT-OVERVIEW.md`,
-  `02-ARCHITECTURE-AND-FLOW.md`, `03-CODE-AUDIT.md` (47 findings),
-  `04-PROGRESS-REPORT.md` (about 60% overall) and `05-ROADMAP-NEXT-STEPS.md`.
-- Note: this changelog has no entries for 0.1.5-0.1.7 (see `windows/CHANGELOG.md`
-  and tags `windows-v0.1.5`..`windows-v0.1.7`). Tracked as audit item B-41.
+- Added the project audit: `docs/01-PROJECT-OVERVIEW.md` to
+  `docs/05-ROADMAP-NEXT-STEPS.md`.
+- Aligned the version to 0.1.8 in `VERSION`, `windows/VERSION`, `CLAUDE.md`
+  and both READMEs. Backfilled the changelog entries for 0.1.5 to 0.1.7.
 
+### Verification
+- Pester (Windows PowerShell 5.1.20348, Pester 3.4.0): 31/31 passed.
+- `powershell.exe -File windows\agent.ps1 -Report` exits 0 and writes
+  `health.json`, `report.pdf` (18 pages, checklist rendered) and
+  `management_report.pdf`.
+
+### Known issues (planned for 0.2.0, see `docs/05-ROADMAP-NEXT-STEPS.md`)
+- The PDF renderers still use thresholds that differ from `Health.ps1`
+  (Rule 3.2).
+- MySQL applicability is never detected because collectors run isolated
+  (B-02).
+- An empty DSN is still reported as SQLite (B-04). Unparseable backup and
+  definition dates are still treated as 999 days old (B-09).
+
+## [0.1.7] - 2026-10-31
+
+### Fixed
+- **DSN redaction:** added `Redact-DatabaseDsn` and applied it to
+  `database.connection_string_raw`, `directory_cache.connection_string` and
+  all four `backup.db.*.target_dsn` keys.
+- **Date normalization:** added `Normalize-ToIsoDate` and applied it to
+  `os.last_update_date`, `icewarp.antispam.last_update` and
+  `icewarp.antivirus.last_update`, so US-format dates serialize as
+  `YYYY-MM-DD`.
+- **CPU check:** `os.cpu.load1` is already a 0-100 percentage on Windows and
+  is now compared directly against `monitor.cpu.threshold_percent`.
+- **`general.os.version`** is emitted as a JSON number (`10.0`).
+- **DNS primary domain:** `DnsMailFlow.ps1` no longer falls back to the
+  server hostname for SPF/DKIM/DMARC/PTR, and the DKIM domain lookup is
+  guarded against an empty hostname.
+- **TLS:** a missing certificate expiry downgrades a passing `tls` pillar to
+  `warn`.
+- **Disk roll-up:** a collector `WARNING` status on any disk forces
+  `health.disk.overall` to `warn`.
+- **INFO statuses:** `health.backup.db.cache` uses `ok`/`warn`, and the
+  watchdog summaries use `warn` instead of `INFO`.
+
+## [0.1.6] - 2026-10-31
+
+### Added
+- `lib/ReportTechnical.ps1`: technical PDF (`report.pdf`) with cover,
+  nine-pillar health summary, 113-row checklist and data appendix.
+- `lib/ReportManagement.ps1`: executive PDF (`management_report.pdf`) with
+  cover letter, KPI overview, per-section control areas and recommended
+  actions. It reuses the technical checklist capture.
+- Both reports use a built-in PDF writer and are generated by
+  `agent.ps1 -Report`.
+
+### Fixed
+- Bash-isms left over from the port (`sprintf`, arithmetic expansion,
+  `-f` operands). Removed the stray `windows/check_backticks.ps1`.
+
+### Known issue
+- The reports only rendered on PowerShell 7. Fixed in 0.1.8.
+
+## [0.1.5] - 2026-10-28
+
+### Fixed
+- `Watchdog.ps1`: the CPU/disk/RAM/OS-update summaries read
+  `$Context.Data`, which is empty in the isolated collector runspace. They
+  are now computed directly from CIM.
+- `Watchdog.ps1`: the CPU percentage is no longer double-counted
+  (`LoadPercentage` is already 0-100).
+- `Antivirus.ps1`: the Sophos `update.json` fallback probes `IceWarpHome`,
+  `APPDATA`, `PROGRAMDATA` and `USERPROFILE` candidates.
+- `DnsMailFlow.ps1`: SPF/DKIM/DMARC prefer `MailHostname`, then
+  `MailDomain`, then the first discovered IceWarp domain.
+- `Environment.ps1` / `StoragePaths.ps1`: `icewarp.path.source` reports
+  `tool_exe` on Windows.
+- `Health.ps1`: an unparseable OS update date yields `skip` rather than a
+  999-day CRITICAL.
+
+### Verification
+- Pester: 28/28 passed. Full run: exit 0, 433 keys.
 ## [0.1.4] - 2026-10-28
 
 ### Changed

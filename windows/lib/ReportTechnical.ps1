@@ -232,7 +232,8 @@ function Build-TechnicalReport([hashtable]$Data,[string]$OutPath){
 function Render-Checklist([hashtable]$Data){
     $script:DATA=$Data
     $script:_PDF_ROW_INDEX=0
-    $checklistFile=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".." "config" "checklist.conf.pdf"))
+    # PS 5.1 Join-Path accepts only one child path; nest the calls.
+    $checklistFile=[System.IO.Path]::GetFullPath((Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'config') 'checklist.conf.pdf'))
     if(-not (Test-Path $checklistFile)){
         Pdf-PlainLine "Checklist file not found: $checklistFile"
         return

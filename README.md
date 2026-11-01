@@ -13,16 +13,17 @@ source the Linux lib/ directory.
 |---|---|
 | Platform | Windows |
 | Entry point | windows\agent.ps1 |
-| Version | 0.1.4 |
-| Status | 27 collectors plus health engine; 433 of 432 schema keys implemented |
+| Version | 0.1.8 |
+| Status | 27 collectors, health engine and PDF reports; all 432 schema keys implemented |
 
 Configuration, logging, the IceWarp tool.exe wrapper, schema-compatible flat
 JSON output, DNS/SMTP/security/storage/license/backup collectors, the full
-health evaluation engine, and Pester contract tests are in place. 433 of the
-432 Linux `health.json` keys are implemented (the 3 dynamic
+health evaluation engine, and Pester contract tests are in place. All 432
+Linux `health.json` keys are implemented (the 3 dynamic
 `domain.designhost.ir.*` keys are emitted as null/N/A when no domain is
-discovered). PDF reports, the full 113-item checklist and automatic updates are
-not ported yet.
+discovered). The technical and executive PDF reports (113-item checklist) are
+generated with `-Report` on Windows PowerShell 5.1. Automatic updates are not
+ported yet. Open issues: `docs/03-CODE-AUDIT.md`.
 
 ## Requirements
 
@@ -113,7 +114,7 @@ Example JSON:
 
 ```json
 {
-    "agent.version": "0.1.2",
+    "agent.version": "0.1.8",
     "general.technician": "Parsavan",
     "icewarp.version": "14.3.0.12",
     "icewarp.tool.available": true,
@@ -190,9 +191,8 @@ Rules:
   continues with the remaining collectors.
 - Context exposes Config, Data, Root, and Version.
 
-Ten collectors ship in 0.1.2 (see `windows/README.md` collectors table):
-General/Version plus Icewarp/BackupArchive, DnsMailFlow, DomainsUsers,
-License, Monitor, OsStorage, Security, SmtpSettings, and ServiceStatus.
+27 collectors ship in 0.1.8: `General/Version` plus 26 `Icewarp/*` collectors
+(see the `windows/README.md` collectors table and `CLAUDE.md`).
 
 ## Tests
 
@@ -219,7 +219,7 @@ live IceWarp server.
 
 ## Updates
 
-Automatic updates are not implemented for Windows in 0.1.2. For a Git
+Automatic updates are not implemented for Windows in 0.1.8. For a Git
 checkout, update manually during a maintenance window:
 
 ```powershell
