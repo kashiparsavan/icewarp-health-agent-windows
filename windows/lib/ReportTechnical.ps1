@@ -1,8 +1,20 @@
 <#
 .SYNOPSIS
 Technical PDF report writer (report.pdf) for the Windows IceWarp Health Agent.
+
 .DESCRIPTION
-Port of Linux lib/pdf.sh manual PDF drawing engine.
+Layout-for-layout port of the Linux technical report (lib/pdf.sh, agent
+0.7.x): navy cover band with identity rows, overall banner and legend, the
+nine-pillar Health Summary, the checklist (one row per item with an italic
+"note:" line), a Collector Status section, a grouped KEY/VALUE appendix, and
+an "IceWarp Health Check Report / Page N of M" footer on every page after
+the cover.
+
+Statuses are never recalculated here. A checklist row whose control is
+evaluated by the health engine takes its badge from health.<name>.result
+($script:PDF_HEALTH_ROW_MAP lists the candidate keys, Linux-granular keys
+first). Rows without a health key use the checklist kind rule from
+config\checklist.conf.pdf, exactly as the Linux renderer does.
 #>
 Set-StrictMode -Version 2.0
 
@@ -15,31 +27,8 @@ $script:PDF_C_TEXT='0.15 0.17 0.2'; $script:PDF_C_GRAY_LIGHT='0.955 0.96 0.965'
 $script:PDF_C_GREEN='0.118 0.518 0.286'; $script:PDF_C_RED='0.753 0.224 0.169'
 $script:PDF_C_AMBER='0.83 0.53 0.06'; $script:PDF_C_BLUEGRAY='0.30 0.42 0.55'
 $script:PDF_C_GRAY='0.5 0.53 0.56'; $script:PDF_C_VALUE='0.30 0.33 0.36'
+$script:PDF_C_GROUP_BG='0.93 0.95 0.97'; $script:PDF_C_RULE='0.80 0.83 0.87'
 $script:PDF_CHECKLIST_VERSION = '1.14'
-
-function Pdf-Escape([string]$s){
-    $o=[System.Text.StringBuilder]::new()
-    for($i=0;$i -lt $s.Length;$i++){
-        $c=[int]$s[$i]
-        if($c -ge 32 -and $c -le 126){
-            if($c -eq 92){$o.Append('\')|Out-Null}
-            if($c -eq 40){$o.Append('\')|Out-Null}
-            if($c -eq 41){$o.Append('\')|Out-Null}
-            $o.Append($s[$i])|Out-Null
-        } else { $o.Append('?')|Out-Null }
-    }
-    return $o.ToString()
-}
-function Pdf-IsNum([string]$v){ return $v -match '^-?[0-9]+(\.[0-9]+)?$' }
-function Pdf-Trunc([string]$t,[int]$max){
-    if($t.Length -gt $max){$t=$t.Substring(0,$max-1)+'.'}
-    return $t
-}
-function Pdf-DaysAgo([string]$d){
-    if([string]::IsNullOrEmpty($d)){ return 999 }
-    try{ $dt=[datetime]::Parse($d); return [int](([DateTime]::UtcNow - $dt).TotalDays) }
-    catch { return 999 }
-}
 
 $script:_PDF_PAGES=[System.Collections.Generic.List[string]]::new()
 $script:_PDF_CUR=""; $script:_PDF_Y=$script:PDF_TOP_Y
@@ -49,6 +38,24 @@ $script:CHECKLIST_ROWS=$null
 $script:CHECKLIST_CAPTURED=$null
 $script:CHECKLIST_CAPTURE_SECTION=""
 
+# --- Primitives ---------------------------------------------------------------
+
+function Pdf-Escape([string]$s){
+    $o=[System.Text.StringBuilder]::new()
+    for($i=0;$i -lt $s.Length;$i++){
+        $c=[int]$s[$i]
+        if($c -ge 32 -and $c -le 126){
+            if($c -eq 92 -or $c -eq 40 -or $c -eq 41){ [void]$o.Append('\') }
+            [void]$o.Append($s[$i])
+        } else { [void]$o.Append('?') }
+    }
+    return $o.ToString()
+}
+function Pdf-IsNum([string]$v){ return $v -match '^-?[0-9]+(\.[0-9]+)?$' }
+function Pdf-Trunc([string]$t,[int]$max){
+    if($t.Length -gt $max){ $t=$t.Substring(0,$max-1)+'.' }
+    return $t
+}
 function Pdf-Rect([float]$x,[float]$y,[float]$w,[float]$h,[string]$color){
     $script:_PDF_CUR += "${color} rg$($script:_NL)${x} ${y} ${w} ${h} re f$($script:_NL)"
 }
@@ -82,9 +89,10 @@ function Pdf-BadgeColor([string]$k){
 }
 function Pdf-PlainLine([string]$t){
     Pdf-Ensure 20
-    Pdf-Text $script:PDF_MARGIN $script:_PDF_Y $t F1 9 $script:PDF_C_TEXT
-    $script:_PDF_Y = $script:_PDF_Y - 16
+    Pdf-Text $script:PDF_MARGIN $script:_PDF_Y $t F1 8.5 $script:PDF_C_TEXT
+    $script:_PDF_Y = $script:_PDF_Y - 12
 }
+# One checklist / summary row: label, value, coloured badge and an italic note.
 function Pdf-Row([string]$label,[string]$value,[string]$bkind,[string]$btext,[string]$note){
     if($null -ne $script:CHECKLIST_ROWS){
         [void]$script:CHECKLIST_ROWS.Add([pscustomobject]@{
@@ -111,231 +119,362 @@ function Pdf-Row([string]$label,[string]$value,[string]$bkind,[string]$btext,[st
     Pdf-Rect $badgeX $badgeY $badgeW $badgeH (Pdf-BadgeColor $bkind)
     Pdf-TextTrunc ($badgeX+6) ($badgeY+4) $btext F2 7.5 $script:PDF_C_WHITE 14
     if($note){
-        Pdf-TextTrunc ($script:PDF_MARGIN+8) ($textY-11) $note F1 8 $script:PDF_C_GRAY 90
+        Pdf-TextTrunc ($script:PDF_MARGIN+8) ($textY-11) ("note: " + $note) F3 7.5 $script:PDF_C_GRAY 130
     }
     $script:_PDF_Y = $rowTop - $rowH
 }
-function Pdf-ClValue([string]$keys){
-    if($keys.Contains(',')){
-        $parts=@(); $ks=$keys.Split(',')
-        foreach($k in $ks){
-            $short=$k.Substring($k.LastIndexOf('.')+1)
-            $parts+=("{0}={1}" -f $short, (Pdf-Raw $k))
-        }
-        return ($parts -join ', ')
-    } else {
-        $v=Pdf-Raw $keys
-        if([string]::IsNullOrEmpty($v)){ $v='(empty)' }
-        return $v
-    }
-}
+
+# --- Data access ----------------------------------------------------------------
+
 # Normalized string form of a data value. Native booleans become 'true' or
-# 'false' so they compare correctly with the string literals used below
-# (PowerShell converts '0'/'false' to $true when comparing against a bool).
+# 'false' so they compare correctly with string literals (PowerShell converts
+# '0'/'false' to $true when it compares a string against a bool).
 function Pdf-Raw([string]$key){
-    if(-not $script:DATA.Contains($key)){ return '' }
+    if($null -eq $script:DATA -or -not $script:DATA.Contains($key)){ return '' }
     $v=$script:DATA[$key]
     if($null -eq $v){ return '' }
     if($v -is [bool]){ if($v){ return 'true' } else { return 'false' } }
     return [string]$v
 }
-
-# Checklist rows whose status is owned by the health engine (lib/Health.ps1).
-# For these rows the badge and note come from health.<name>.result/.message,
-# never from thresholds re-implemented in the renderer (CLAUDE.md Rule 3.2).
-$script:PDF_HEALTH_ROW_MAP=@{
-    'Enable System Backup'='backup.auto'
-    'Last Backup Date and Time'='backup.last_time'
-    'Enable Database Backup - Accounts'='backup.db.accounts'
-    'Enable Database Backup - AntiSpam'='backup.db.as'
-    'Enable Database Backup - GroupWare'='backup.db.gw'
-    'Enable Database Backup - Directory Cache'='backup.db.cache'
-    'Enable System Watchdog'='watchdog.control'
-    'Enable System Monitor (Mem/Disk/CPU)'='monitor.enabled'
-    'Watchdog - SMTP'='watchdog.smtp'
-    'Watchdog - POP3/IMAP'='watchdog.pop3'
-    'Watchdog - IM/VoIP'='watchdog.im'
-    'Watchdog - GroupWare'='watchdog.gw'
-    'Watchdog Interval'='watchdog.interval'
-    'Set Directory Cache Schedule'='directory_cache'
-    'Check for Certificates'='tls'
-    'Use TLS/SSL (Secured Delivery)'='tls_delivery'
-    'Enable SSL/TLS'='tls_delivery'
-    'Block IP - Connections in 1 Minute'='intrusion.block_connections'
-    'Amount of Time IP is Blocked (minutes)'='intrusion.block_duration'
-    'Set customers-stat@parsavan.com'='admin_email'
-    'Set Admin Email'='admin_email'
-    'Password Policy Min Length'='password_policy'
-    'Disable DIGEST-MD5'='digest_md5'
-    'Session Timeout'='session_timeout'
-    'Disable IMAP'='service.imap'
-    'Disable POP3'='service.pop3'
-    'Disk (Total GB / Used %)'='disk.overall'
-    'CPU Usage'='cpu'
-    'RAM (Total KB / Available KB)'='memory'
-    'APP OS Last Update'='os_update'
-    'Database Type'='database'
+function Pdf-IsTrue([string]$v){ return ($v -eq '1' -or $v -eq 'true') }
+function Pdf-IsFalse([string]$v){ return ($v -eq '0' -or $v -eq 'false') }
+function Pdf-ClValue([string]$keys){
+    if($keys.Contains(',')){
+        $parts=@()
+        foreach($k in $keys.Split(',')){
+            $short=$k.Substring($k.LastIndexOf('.')+1)
+            $parts+=("{0}={1}" -f $short, (Pdf-Raw $k))
+        }
+        return ($parts -join ', ')
+    }
+    $v=Pdf-Raw $keys
+    if([string]::IsNullOrEmpty($v)){ $v='(empty)' }
+    return $v
 }
 
-# Map a health result to the badge vocabulary. Returns $null when the
-# result is unknown so the caller can fall back to the raw-data rule.
+# --- Health-engine owned rows ---------------------------------------------------
+
+# Checklist label -> candidate health names. The first name with a result in
+# the data wins: the Linux-granular keys come first so the same renderer
+# matches the Linux report, then the Windows health engine equivalents.
+$script:PDF_HEALTH_ROW_MAP=@{
+    'Check PTR'=@('mail.ptr')
+    'Check SPF'=@('mail.spf')
+    'Check DKIM'=@('mail.dkim')
+    'Check DMARC'=@('mail.dmarc')
+    'Check TLS and Start TLS'=@('mail.starttls')
+    'Test DNS Lookup'=@('mail.dns_lookup')
+    'Enable System Backup'=@('backup.auto')
+    'Last Backup Date and Time'=@('backup.last_time')
+    'Enable Database Backup - Accounts'=@('backup.db.accounts')
+    'Enable Database Backup - AntiSpam'=@('backup.db.as')
+    'Enable Database Backup - GroupWare'=@('backup.db.gw')
+    'Enable Database Backup - Directory Cache'=@('backup.db.cache')
+    'Enable System Watchdog'=@('watchdog.control')
+    'Enable System Monitor (Mem/Disk/CPU)'=@('monitor.enabled')
+    'Check for Certificates'=@('tls.certificate','tls')
+    'RBL Valli Check (is our IP blacklisted)'=@('threat.rbl')
+    '2FA'=@('access.2fa')
+    'Use TLS/SSL (Secured Delivery)'=@('tls_delivery')
+    'Maximum Number of Simultaneous Threads'=@('smtp.threads')
+    'Set Directory Cache Schedule'=@('directory_cache')
+    'Block IP - Connections in 1 Minute'=@('intrusion.block_connections')
+    'Block IP - Unknown User Delivery Count'=@('intrusion.unknown_user')
+    'Block IP - Denied for Relaying Too Often'=@('intrusion.relay_denied')
+    'Block IP - Exceeds RSET Session Count'=@('intrusion.rset')
+    'Block IP - Message Spam Score'=@('intrusion.spam_score')
+    'Block IP - Exceeds Failed Login Attempts'=@('intrusion.failed_logins')
+    'Amount of Time IP is Blocked (minutes)'=@('intrusion.block_duration')
+    'Set customers-stat@parsavan.com'=@('access.stats_mailbox')
+    'Remove Old AntiSpam Folders'=@('threat.cyren')
+    'Set Admin Email'=@('admin_email')
+    'Disable DIGEST-MD5'=@('digest_md5')
+    'Session Timeout'=@('session_timeout')
+    'Enable SSL/TLS'=@('tls_delivery')
+    'Disable IMAP'=@('service.imap')
+    'Disable POP3'=@('service.pop3')
+    'Watchdog - SMTP'=@('watchdog.smtp')
+    'Watchdog - POP3/IMAP'=@('watchdog.pop3')
+    'Watchdog - IM/VoIP'=@('watchdog.im')
+    'Watchdog - GroupWare'=@('watchdog.gw')
+    'Watchdog Interval'=@('watchdog.interval')
+    'Disk (Total GB / Used %)'=@('disk.overall')
+    'CPU Usage'=@('cpu')
+    'RAM (Total KB / Available KB)'=@('memory')
+    'APP OS Last Update'=@('os_update')
+    'Swap Usage (7 days)'=@('swap')
+    'Database Type'=@('database.platform','database')
+}
+
 function Pdf-HealthBadge([string]$result){
     switch($result){
-        'pass'     { return 'PASS|PASS' }
-        'ok'       { return 'PASS|PASS' }
-        'warn'     { return 'WARN|WARN' }
-        'fail'     { return 'CRITICAL|CRITICAL' }
-        'critical' { return 'CRITICAL|CRITICAL' }
-        'skip'     { return 'INFO|SKIP' }
+        'pass'     { return 'PASS' }
+        'ok'       { return 'PASS' }
+        'warn'     { return 'WARN' }
+        'fail'     { return 'CRITICAL' }
+        'critical' { return 'CRITICAL' }
+        'skip'     { return 'INFO' }
+        'info'     { return 'INFO' }
     }
-    return $null
+    return ''
 }
-
-# Display value for a health-owned row (evidence only; the status comes from health).
-function Pdf-HealthRowValue([string]$label,[string]$kind,[string]$keys){
+function Pdf-HealthName([string]$label){
+    if(-not $script:PDF_HEALTH_ROW_MAP.ContainsKey($label)){ return '' }
+    foreach($candidate in $script:PDF_HEALTH_ROW_MAP[$label]){
+        if(Pdf-HealthBadge (Pdf-Raw "health.$candidate.result")){ return $candidate }
+    }
+    return ''
+}
+function Pdf-DaysFromMessage([string]$message){
+    if($message -match '(\d+) days'){ return $Matches[1] }
+    return ''
+}
+# Certificate expiry as YYYY-MM-DD from the collector's expiry text
+# (openssl "Dec 11 09:32:53 2026 GMT" on Linux, .NET date text on Windows).
+function Pdf-IsoDate([string]$text){
+    if([string]::IsNullOrWhiteSpace($text)){ return '' }
+    $clean=($text -replace '\s+',' ').Trim()
+    $parsed=[datetime]::MinValue
+    $inv=[System.Globalization.CultureInfo]::InvariantCulture
+    foreach($fmt in @('MMM d HH:mm:ss yyyy \G\M\T','MMM dd HH:mm:ss yyyy \G\M\T','yyyy-MM-dd','yyyy-MM-dd HH:mm:ss')){
+        if([datetime]::TryParseExact($clean,$fmt,$inv,[System.Globalization.DateTimeStyles]::AllowWhiteSpaces,[ref]$parsed)){ return $parsed.ToString('yyyy-MM-dd',$inv) }
+    }
+    foreach($culture in @($inv,[System.Globalization.CultureInfo]::CurrentCulture)){
+        if([datetime]::TryParse($clean,$culture,[System.Globalization.DateTimeStyles]::None,[ref]$parsed)){ return $parsed.ToString('yyyy-MM-dd',$inv) }
+    }
+    return ''
+}
+# Row note: the checklist note, with the archive folder appended as on Linux.
+function Pdf-RowNote([string]$label,[string]$note){
+    if($label -eq 'Integrate Archive with IMAP Folder'){
+        $folder=Pdf-Raw 'archive.imap_folder_name'
+        if($folder){ return ('{0}: {1}' -f $note, $folder) }
+    }
+    return $note
+}
+# Evidence shown in the value column of a health-owned row.
+function Pdf-HealthValue([string]$label,[string]$kind,[string]$keys,[string]$result,[string]$name){
+    $raw=Pdf-Raw $keys
+    $message=Pdf-Raw "health.$name.message"
+    if($label -in @('Check PTR','Check SPF','Check DKIM','Check DMARC','Check TLS and Start TLS','Test DNS Lookup')){
+        if((Pdf-HealthBadge $result) -eq 'PASS'){ return 'OK' }
+        if(Pdf-IsTrue $raw){ return 'Mismatch' }
+        return 'Missing'
+    }
+    if($label -eq 'Last Backup Date and Time' -or $label -eq 'APP OS Last Update'){
+        if(-not $raw){ return '(empty)' }
+        $days=Pdf-DaysFromMessage $message
+        if($days){ return ('{0} ({1} days ago)' -f $raw, $days) }
+        return $raw
+    }
     switch($label){
+        'Check for Certificates' {
+            $left=Pdf-Raw 'icewarp.ssl.days_left'
+            $expiry=Pdf-Raw 'icewarp.ssl.expiration'
+            if($left){
+                $iso=Pdf-IsoDate $expiry
+                if($iso){ return ('{0} days left ({1})' -f $left, $iso) }
+                return ('{0} days left' -f $left)
+            }
+            if($expiry){ return $expiry }
+            return '(empty)'
+        }
+        'RBL Valli Check (is our IP blacklisted)' {
+            if(Pdf-IsTrue $raw){ return 'Yes' }; if(Pdf-IsFalse $raw){ return 'No' }
+        }
+        '2FA' {
+            if(Pdf-IsFalse $raw){ return '2FA active' }; if(Pdf-IsTrue $raw){ return '2FA bypass enabled' }
+        }
+        'Set Directory Cache Schedule' {
+            if(Pdf-IsTrue $raw){ $s=Pdf-Raw 'directory_cache.schedule_raw'; if($s){ return $s }; return 'Scheduled' }
+            return 'Not scheduled'
+        }
+        'Disable DIGEST-MD5' {
+            if(Pdf-IsTrue $raw){ return 'Enabled' }; if(Pdf-IsFalse $raw){ return 'Disabled' }
+        }
+        'Session Timeout' { if($raw){ return ('{0} minutes' -f $raw) } }
+        'Disable IMAP' { if(Pdf-IsTrue $raw){ return 'Running' }; if(Pdf-IsFalse $raw){ return 'Disabled' } }
+        'Disable POP3' { if(Pdf-IsTrue $raw){ return 'Running' }; if(Pdf-IsFalse $raw){ return 'Disabled' } }
+        'Disk (Total GB / Used %)' {
+            return ('Total(GB)={0} / Used %={1}' -f (Pdf-Raw 'storage.root_fs.total_gb'), (Pdf-Raw 'storage.root_fs.used_percent'))
+        }
         'CPU Usage' {
-            $l=Pdf-Raw 'os.cpu.load1'; if($l){ return "$l% (1-min)" }; return '(empty)'
+            # Linux format: "load1 1.01 (limit 2.40)" - no % signs, limit from system monitor threshold
+            $load=Pdf-Raw 'os.cpu.load1'
+            $limit=Pdf-Raw 'monitor.cpu.threshold_percent'
+            if($load -and $limit){ return ('load1 {0} (limit {1})' -f $load, $limit) }
+            if($load){ return ('load1 {0}' -f $load) }
+            return '(empty)'
         }
         'RAM (Total KB / Available KB)' {
             return ('Total(KB)={0} / Available KB={1}' -f (Pdf-Raw 'os.memory.total_kb'), (Pdf-Raw 'os.memory.available_kb'))
         }
-        'Disk (Total GB / Used %)' {
-            return ('{0} GB / {1}%' -f (Pdf-Raw 'storage.root_fs.total_gb'), (Pdf-Raw 'storage.root_fs.used_percent'))
-        }
-        'Disable DIGEST-MD5' {
-            switch(Pdf-Raw $keys){ 'true'{ return 'DIGEST-MD5 enabled' } 'false'{ return 'DIGEST-MD5 disabled' } }
-            return '(empty)'
-        }
-        'Watchdog Interval' {
-            $m=Pdf-Raw $keys
-            if($m -eq '0'){ return 'Every minute (0)' }
-            if($m){ return "$m minutes" }
-            return '(empty)'
+        'Swap Usage (7 days)' {
+            $pct=Pdf-Raw 'system.swap.used_percent'; if($pct){ return "$pct%" }
         }
     }
-    if($label -eq 'Disable IMAP' -or $label -eq 'Disable POP3'){
-        $s=Pdf-Raw $keys
-        if($s -eq '1' -or $s -eq 'true'){ return 'Service active' }
-        if($s -eq '0' -or $s -eq 'false'){ return 'Service disabled' }
-    }
-    $raw=Pdf-Raw $keys
-    if($kind -eq 'B'){ if($raw -eq '1' -or $raw -eq 'true'){ return 'Enabled' } else { return 'Disabled' } }
-    if($kind -eq 'R'){ if($raw -eq '1' -or $raw -eq 'true'){ return 'Yes' } elseif($raw -eq '0' -or $raw -eq 'false'){ return 'No' } }
+    if($kind -eq 'B'){ if(Pdf-IsTrue $raw){ return 'Enabled' }; return 'Disabled' }
+    if($kind -eq 'R'){ if(Pdf-IsTrue $raw){ return 'Yes' }; if(Pdf-IsFalse $raw){ return 'No' } }
     if([string]::IsNullOrEmpty($raw)){ return '(empty)' }
     return $raw
 }
 
-# Render a checklist row from the health engine. Returns $true when rendered.
-function Pdf-TryHealthRow([string]$label,[string]$kind,[string]$keys){
-    if(-not $script:PDF_HEALTH_ROW_MAP.ContainsKey($label)){ return $false }
-    $name=$script:PDF_HEALTH_ROW_MAP[$label]
-    $result=Pdf-Raw "health.$name.result"
-    $badge=Pdf-HealthBadge $result
-    if($null -eq $badge){ return $false }
-    $bkind,$btext=$badge.Split('|')
-    $msg=Pdf-Raw "health.$name.message"
-    Pdf-Row $label (Pdf-HealthRowValue $label $kind $keys) $bkind $btext $msg
-    return $true
-}
+# --- Checklist ------------------------------------------------------------------
 
-function Pdf-IntrusionValidate([string]$key,[string]$value){
-    $expected=""
-    switch($key){
-        'security.intrusion.block_connections_per_minute.value'{ $expected='50' }
-        'security.intrusion.block_unknown_user_count.value'{ $expected='5' }
-        'security.intrusion.block_relay_denied_count.value'{ $expected='5' }
-        'security.intrusion.block_rset_count.value'{ $expected='5' }
-        'security.intrusion.block_spam_score.value'{ $expected='9.00' }
-        'security.intrusion.block_failed_logins.value'{ $expected='5' }
-        'security.intrusion.block_duration_minutes'{ $expected='360' }
+function Pdf-ChecklistRow([string]$section,[string]$label,[string]$kind,[string]$keys,[string]$note){
+    # MySQL rows only apply when MySQL is the database platform.
+    if($section -like 'MySQL Server*' -and (Pdf-Raw 'database.scope') -ne 'remote'){
+        $why='not applicable - SQLite database in use, no MySQL server to check'
+        if((Pdf-Raw 'database.type') -eq 'mysql'){ $why='not applicable - MySQL runs locally on this same server, see the Database section above' }
+        Pdf-Row $label 'N/A' 'INFO' 'INFO' $why
+        return
     }
-    if([string]::IsNullOrEmpty($expected)){ return "WARN|WARN|${value}" }
-    if([string]::IsNullOrEmpty($value)){ return "CRITICAL|CRITICAL|Setting not found" }
-    if($value -eq $expected){ return "PASS|PASS|Expected: ${expected}" }
-    return "WARN|WARN|Expected: ${expected} (current: ${value})"
-}
+    if($section -eq 'Database' -and $label -like 'MySQL*' -and (Pdf-Raw 'mysql.applicable') -ne 'true'){
+        Pdf-Row $label 'not applicable' 'INFO' 'INFO' 'MySQL not applicable on this host'
+        return
+    }
 
-function Pdf-AppendixCategory([string]$title){
-    Pdf-Ensure 40
-    $script:_PDF_Y = $script:_PDF_Y - 4
-    Pdf-Rect $script:PDF_MARGIN ($script:_PDF_Y-14) $script:PDF_CONTENT_W 16 $script:PDF_C_BLUEGRAY
-    Pdf-Text ($script:PDF_MARGIN+8) ($script:_PDF_Y-11) $title F2 9 $script:PDF_C_WHITE
-    $script:_PDF_Y = $script:_PDF_Y - 22
-}
+    # Health-engine owned rows: badge from health.*; note is the checklist note
+    # on PASS and the health message otherwise (Linux behaviour).
+    $name=Pdf-HealthName $label
+    if($name){
+        $result=Pdf-Raw "health.$name.result"
+        $badge=Pdf-HealthBadge $result
+        $btext=$badge
+        if($result -eq 'skip'){ $btext='SKIP' }
+        $rowNote=Pdf-RowNote $label $note
+        if($badge -ne 'PASS'){
+            $message=Pdf-Raw "health.$name.message"
+            if($message){ $rowNote=$message }
+        }
+        Pdf-Row $label (Pdf-HealthValue $label $kind $keys $result $name) $badge $btext $rowNote
+        return
+    }
 
-function Build-TechnicalReport([hashtable]$Data,[string]$OutPath){
-    $script:DATA=$Data
-    $script:_PDF_PAGES=[System.Collections.Generic.List[string]]::new()
-    $script:_PDF_CUR=""; $script:_PDF_Y=$script:PDF_TOP_Y; $script:_PDF_ROW_INDEX=0
-    $agentHost=$Data['agent.hostname']; if(-not $agentHost){$agentHost='unknown'}
-    $agentTime=$Data['agent.time']; if(-not $agentTime){$agentTime='unknown'}
-    $agentVer=$Data['agent.version']; if(-not $agentVer){$agentVer='unknown'}
-    $overallStatus=$Data['health.summary.overall']; if(-not $overallStatus){$overallStatus='n/a'}
-    $failCount=$Data['health.summary.failed']; if(-not $failCount){$failCount='0'}
-    $warnCount=$Data['health.summary.warnings']; if(-not $warnCount){$warnCount='0'}
-    $totalChecks=$Data['health.summary.total_checks']; if(-not $totalChecks){$totalChecks='0'}
-    Pdf-Rect 0 692 $script:PDF_PAGE_W 100 $script:PDF_C_NAVY
-    Pdf-Text $script:PDF_MARGIN 754 "IceWarp Health Check Report" F2 22 $script:PDF_C_WHITE
-    Pdf-Text $script:PDF_MARGIN 730 ("Based on IceWarp CheckList v{0}" -f $script:PDF_CHECKLIST_VERSION) F3 12 $script:PDF_C_WHITE
-    Pdf-Text $script:PDF_MARGIN 706 ("Host: {0}   Generated: {1}   Agent v{2}" -f $agentHost, $agentTime, $agentVer) F1 9.5 $script:PDF_C_WHITE
-    $script:_PDF_Y=660
-    $licType=$Data['icewarp.license.type']; if(-not $licType){$licType='unknown'}
-    $licExp=$Data['icewarp.license.trial_expiration']
-    if($licExp){ $licDisplay=$licExp }
-    elseif($licType -eq 'Evaluation'){ $licDisplay='Evaluation (expiration not detected)' }
-    else { $licDisplay='N/A (perpetual license)' }
-    $infoRows=@(
-        "Company Name|$($Data['general.company'])",
-        "Mail Domain|$($Data['domain.primary.name'])",
-        "Technician|$($Data['general.technician'])",
-        "IceWarp Version|$($Data['icewarp.version'])",
-        "Antispam Last Update|$($Data['icewarp.antispam.last_update'])",
-        "Antivirus Last Update|$($Data['icewarp.antivirus.last_update'])",
-        "Last Backup Date/Time|$($Data['icewarp.backup.last_time'])",
-        "License Type|$licType",
-        "License Expiration|$licDisplay",
-        "SSL Expiration|$($Data['icewarp.ssl.expiration'])"
-    )
-    foreach($row in $infoRows){
-        $lbl,$val=$row.Split('|',2)
-        Pdf-Text ($script:PDF_MARGIN+8) $script:_PDF_Y "${lbl}:" F2 9.5 $script:PDF_C_TEXT
-        Pdf-TextTrunc ($script:PDF_MARGIN+190) $script:_PDF_Y $val F1 9.5 $script:PDF_C_GRAY 55
-        $script:_PDF_Y = $script:_PDF_Y - 16
+    $raw=Pdf-Raw $keys
+    $rowNote=Pdf-RowNote $label $note
+
+    # Rows whose status is reported by a collector (no health key on this host).
+    if($label -eq 'Database Scope'){
+        $scope=$raw; if(-not $scope){ $scope='unknown' }
+        Pdf-Row $label $scope 'PASS' 'PASS' ("Database scope: {0}" -f $scope)
+        return
     }
-    $script:_PDF_Y = $script:_PDF_Y - 14
-    $bannerColor=$script:PDF_C_GRAY
-    switch($overallStatus){ 'pass'{$bannerColor=$script:PDF_C_GREEN} 'warn'{$bannerColor=$script:PDF_C_AMBER} 'fail'{$bannerColor=$script:PDF_C_RED} }
-    Pdf-Rect $script:PDF_MARGIN ($script:_PDF_Y-44) $script:PDF_CONTENT_W 44 $bannerColor
-    Pdf-Text ($script:PDF_MARGIN+14) ($script:_PDF_Y-20) ("OVERALL: $($overallStatus.ToUpper())") F2 15 $script:PDF_C_WHITE
-    Pdf-Text ($script:PDF_MARGIN+14) ($script:_PDF_Y-36) ("{0} checks run  -  {1} failed  -  {2} warnings" -f $totalChecks, $failCount, $warnCount) F1 9.5 $script:PDF_C_WHITE
-    $script:_PDF_Y = $script:_PDF_Y - 60
-    Pdf-Text $script:PDF_MARGIN $script:_PDF_Y "Legend:" F2 8.5 $script:PDF_C_TEXT
-    $lx=$script:PDF_MARGIN+46
-    @('PASS:Green','CRITICAL:Red','WARN:Orange','INFO:Purple') | ForEach-Object {
-        $status,$col=$_.Split(':')
-        $bc=switch($status){ 'PASS'{$script:PDF_C_GREEN} 'CRITICAL'{$script:PDF_C_RED} 'WARN'{$script:PDF_C_AMBER} 'INFO'{$script:PDF_C_BLUEGRAY} }
-        Pdf-Rect $lx ($script:_PDF_Y-3) 26 11 $bc
-        Pdf-Text ($lx+30) $script:_PDF_Y $status F1 8 $script:PDF_C_TEXT
-        $lx=$lx+30+6*$status.Length+14
+    if($label -eq 'Swap Usage (7 days)'){
+        $pct=Pdf-Raw 'system.swap.used_percent'; if(-not $pct){ $pct='0' }
+        $status=Pdf-Raw 'system.swap.status'
+        $badge=switch($status){ 'PASS'{'PASS'} 'WARN'{'WARN'} 'CRITICAL'{'CRITICAL'} default{'INFO'} }
+        $swapNote=$rowNote
+        if($badge -ne 'PASS'){ $m=Pdf-Raw 'system.swap.message'; if($m){ $swapNote=$m } }
+        Pdf-Row $label "$pct%" $badge $badge $swapNote
+        return
     }
-    $script:_PDF_Y = $script:_PDF_Y - 20
-    Pdf-SectionHeader "Health Summary"
-    $script:_PDF_ROW_INDEX=0
-    Pdf-PlainLine "Nine executive control areas. Detailed evidence follows in the checklist."
-    $summary=@(
-        "backup|Backup & Recovery","mail_flow|Mail Flow & DNS","tls|Transport Security",
-        "access|Access & Authentication","threat|Threat Protection","resources|Server Resources",
-        "os_update|OS & Patching","monitoring|Monitoring & Watchdog","database|Database Platform"
-    )
-    foreach($item in $summary){
-        $key,$title=$item.Split('|')
-        $res=$Data["health.$key.result"]
-        if([string]::IsNullOrEmpty($res)){ $res='skip' }
-        if($res -eq 'skip'){ continue }
-        $bkind=switch($res){ 'pass'{'PASS'} 'ok'{'PASS'} 'warn'{'WARN'} 'fail'{'CRITICAL'} 'critical'{'CRITICAL'} default{'INFO'} }
-        $msg=$Data["health.$key.message"]
-        Pdf-Row $title "" $bkind $bkind $msg
+    if($label -eq 'Remove Old AntiSpam Folders'){
+        $status=Pdf-Raw 'security.cyren_folder.status'
+        if($status -eq 'WARN'){
+            $m=Pdf-Raw 'security.cyren_folder.message'; if(-not $m){ $m=$rowNote }
+            Pdf-Row $label $status 'WARN' 'WARN' $m
+        } elseif($status -eq 'OK'){
+            Pdf-Row $label $status 'PASS' 'PASS' $rowNote
+        } else {
+            Pdf-Row $label (Pdf-ClValue $keys) 'INFO' 'INFO' $rowNote
+        }
+        return
+    }
+
+    # "Expected: X" in the checklist note is the checklist's own target value.
+    if($kind -eq 'V' -and $note -match 'Expected:\s*([^)\s]+)'){
+        $expected=$Matches[1]
+        if([string]::IsNullOrEmpty($raw)){ Pdf-Row $label '' 'CRITICAL' 'CRITICAL' 'Setting not found'; return }
+        $same=($raw -eq $expected)
+        if(-not $same -and (Pdf-IsNum $raw) -and (Pdf-IsNum $expected)){ $same=([double]$raw -eq [double]$expected) }
+        if($same){ Pdf-Row $label $raw 'PASS' 'PASS' $rowNote }
+        else { Pdf-Row $label $raw 'WARN' 'WARN' ('{0} (current: {1})' -f $rowNote, $raw) }
+        return
+    }
+    if($kind -eq 'V'){
+        Pdf-Row $label (Pdf-ClValue $keys) 'INFO' 'INFO' $rowNote
+        return
+    }
+
+    switch($kind){
+        'T' {
+            if($raw -eq $note){ Pdf-Row $label $raw 'PASS' 'PASS' "Expected: $note" }
+            else { Pdf-Row $label $raw 'WARN' 'WARN' "Expected: $note (current: $raw)" }
+        }
+        'F' {
+            if(Pdf-IsTrue $raw){ Pdf-Row $label 'Found' 'PASS' 'PASS' $rowNote }
+            elseif(Pdf-IsFalse $raw){ Pdf-Row $label 'Missing' 'CRITICAL' 'CRITICAL' $rowNote }
+            else { Pdf-Row $label 'N/A' 'INFO' 'INFO' $rowNote }
+        }
+        'B' {
+            if($label -eq 'Disable VRFY'){
+                if(Pdf-IsTrue $raw){ Pdf-Row $label 'Disabled' 'PASS' 'PASS' $rowNote }
+                else { Pdf-Row $label 'Enabled' 'CRITICAL' 'CRITICAL' $rowNote }
+            } elseif($label -eq 'Block Outgoing Port 9001'){
+                if(Pdf-IsTrue $raw){ Pdf-Row $label 'Blocked' 'PASS' 'PASS' $rowNote }
+                else { Pdf-Row $label 'Not blocked' 'CRITICAL' 'CRITICAL' $rowNote }
+            } elseif(Pdf-IsTrue $raw){ Pdf-Row $label 'Enabled' 'PASS' 'PASS' $rowNote }
+            else { Pdf-Row $label 'Disabled' 'CRITICAL' 'CRITICAL' $rowNote }
+        }
+        'R' {
+            if($label -eq '2FA'){
+                if(Pdf-IsFalse $raw){ Pdf-Row $label '2FA active' 'PASS' 'PASS' $rowNote }
+                elseif(Pdf-IsTrue $raw){ Pdf-Row $label '2FA bypass enabled' 'CRITICAL' 'CRITICAL' $rowNote }
+                else { Pdf-Row $label 'N/A' 'INFO' 'INFO' $rowNote }
+            } elseif(Pdf-IsFalse $raw){ Pdf-Row $label 'No' 'PASS' 'PASS' $rowNote }
+            elseif(Pdf-IsTrue $raw){ Pdf-Row $label 'Yes' 'CRITICAL' 'CRITICAL' $rowNote }
+            else { Pdf-Row $label 'N/A' 'INFO' 'INFO' $rowNote }
+        }
+        'L' {
+            if(-not [string]::IsNullOrEmpty($raw) -and $raw -ne '0'){ Pdf-Row $label "Enabled (level $raw)" 'PASS' 'PASS' $rowNote }
+            elseif($raw -eq '0'){ Pdf-Row $label 'Disabled' 'CRITICAL' 'CRITICAL' $rowNote }
+            else { Pdf-Row $label 'N/A' 'INFO' 'INFO' $rowNote }
+        }
+        'Z' {
+            if($raw -eq '0'){ Pdf-Row $label 'Disabled' 'WARN' 'WARN' $rowNote }
+            elseif(-not [string]::IsNullOrEmpty($raw)){ Pdf-Row $label $raw 'INFO' 'INFO' $rowNote }
+            else { Pdf-Row $label 'not collected' 'INFO' 'INFO' $rowNote }
+        }
+        'M' {
+            if(Pdf-IsTrue $raw){ Pdf-Row $label 'Yes' 'WARN' 'WARN' $rowNote }
+            else { Pdf-Row $label 'No' 'PASS' 'PASS' $rowNote }
+        }
+        'G' {
+            if(Pdf-IsTrue $raw){ Pdf-Row $label 'Yes' 'PASS' 'PASS' $rowNote }
+            else { Pdf-Row $label 'No' 'CRITICAL' 'CRITICAL' $rowNote }
+        }
+        'P' {
+            if(Pdf-IsTrue $raw){ Pdf-Row $label 'Active' 'CRITICAL' 'CRITICAL' $rowNote }
+            else { Pdf-Row $label 'Off' 'PASS' 'PASS' $rowNote }
+        }
+        'D' {
+            if($label -eq 'Disable AntiSpam Live'){
+                if(Pdf-IsFalse $raw){ Pdf-Row $label 'YES' 'PASS' 'PASS' $rowNote }
+                elseif(Pdf-IsTrue $raw){ Pdf-Row $label 'NO' 'WARN' 'WARN' $rowNote }
+                else { Pdf-Row $label 'N/A' 'INFO' 'INFO' $rowNote }
+            } elseif(Pdf-IsFalse $raw){ Pdf-Row $label 'Disabled' 'PASS' 'PASS' $rowNote }
+            elseif(Pdf-IsTrue $raw){ Pdf-Row $label 'Enabled' 'WARN' 'WARN' $rowNote }
+            else { Pdf-Row $label 'N/A' 'INFO' 'INFO' $rowNote }
+        }
+        'W' { Pdf-Row $label $raw 'INFO' 'INFO' $rowNote }
+        'H' {
+            $worst='pass'; $msgs=@()
+            foreach($k in $keys.Split(',')){
+                $result=Pdf-Raw "health.$k.result"
+                if($result -eq 'fail' -or $result -eq 'critical'){ $worst='fail' }
+                elseif($result -eq 'warn' -and $worst -ne 'fail'){ $worst='warn' }
+                $m=Pdf-Raw "health.$k.message"
+                if($m){ $msgs+=$m }
+            }
+            $badge=switch($worst){ 'pass'{'PASS'} 'warn'{'WARN'} default{'CRITICAL'} }
+            $joined=($msgs -join '; '); if(-not $joined){ $joined=$rowNote }
+            Pdf-Row $label '' $badge $badge $joined
+        }
+        default {
+            if(-not [string]::IsNullOrEmpty($raw)){ Pdf-Row $label $raw 'INFO' 'INFO' $rowNote }
+            else { Pdf-Row $label 'N/A' 'INFO' 'INFO' $rowNote }
+        }
     }
 }
 
@@ -344,15 +483,14 @@ function Render-Checklist([hashtable]$Data){
     $script:_PDF_ROW_INDEX=0
     # PS 5.1 Join-Path accepts only one child path; nest the calls.
     $checklistFile=[System.IO.Path]::GetFullPath((Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'config') 'checklist.conf.pdf'))
-    if(-not (Test-Path $checklistFile)){
+    if(-not (Test-Path -LiteralPath $checklistFile)){
         Pdf-PlainLine "Checklist file not found: $checklistFile"
         return
     }
     $curSection=""
     $script:CHECKLIST_ROWS=[System.Collections.Generic.List[object]]::new()
     $script:CHECKLIST_CAPTURE_SECTION=""
-    $lines=[System.IO.File]::ReadAllLines($checklistFile)
-    foreach($rawLine in $lines){
+    foreach($rawLine in [System.IO.File]::ReadAllLines($checklistFile)){
         $line=$rawLine.Trim()
         if([string]::IsNullOrEmpty($line)){ continue }
         $parts=$line.Split('~')
@@ -365,295 +503,200 @@ function Render-Checklist([hashtable]$Data){
             $script:CHECKLIST_CAPTURE_SECTION=$section
             $script:_PDF_ROW_INDEX=0
         }
-        if($section -like "MySQL Server*"){
-            if($Data['database.scope'] -ne 'remote'){
-                Pdf-Row $label "not applicable" "INFO" "INFO" "not applicable - SQLite or local MySQL"
-                continue
-            }
-        }
-        if($section -eq 'Database' -and $label -like 'MySQL*'){
-            if($Data['mysql.applicable'] -ne 'true'){
-                Pdf-Row $label "not applicable" "INFO" "INFO" "MySQL not applicable on this host"
-                continue
-            }
-        }
-        # Rows owned by the health engine: status comes from health.*.
-        if(Pdf-TryHealthRow $label $kind $keys){ continue }
-        if($label -eq 'Enable Database Backup'){
-            $raw=$Data['icewarp.database_backup.enabled']
-            if($raw -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-            else { Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            continue
-        }
-        if($label -eq 'Enable System Backup'){
-            $raw=$Data['icewarp.backup.auto_enabled']
-            if($raw -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-            else { Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            continue
-        }
-        if($label -eq 'Maximum Number of Simultaneous Threads'){
-            $raw=$Data['smtp.incoming_queue_threads']
-            if([string]::IsNullOrEmpty($raw)){ Pdf-Row $label "" "CRITICAL" "CRITICAL" "Setting not found" }
-            elseif($raw -eq '10'){ Pdf-Row $label $raw "PASS" "PASS" "Expected: 10 (OK)" }
-            else { Pdf-Row $label $raw "WARN" "WARN" "Expected: 10 (current: $raw)" }
-            continue
-        }
-        if($label -eq 'Set Directory Cache Schedule'){
-            $raw=$Data['directory_cache.scheduled']
-            if($raw -eq '1' -or $raw -eq 'true'){ Pdf-Row $label $raw "PASS" "PASS" "Schedule is configured" }
-            else { Pdf-Row $label $raw "CRITICAL" "CRITICAL" "Schedule is NOT configured" }
-            continue
-        }
-        if($label -eq 'Enable System Watchdog'){
-            $ctrl=$Data['watchdog.control']
-            if($ctrl -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-            else { Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            continue
-        }
-        if($label -eq 'Watchdog - SMTP'){
-            $val=$Data['watchdog.smtp']
-            if($val -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-            else { Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            continue
-        }
-        if($label -eq 'Watchdog - POP3/IMAP'){
-            $val=$Data['watchdog.pop3']
-            if($val -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-            else { Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            continue
-        }
-        if($label -eq 'Watchdog - IM/VoIP'){
-            $val=$Data['watchdog.im']
-            if($val -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-            else { Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            continue
-        }
-        if($label -eq 'Watchdog - GroupWare'){
-            $val=$Data['watchdog.gw']
-            if($val -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-            else { Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            continue
-        }
-        if($label -eq 'Watchdog Interval'){
-            $interval=$Data['watchdog.interval_minutes']
-            if([string]::IsNullOrEmpty($interval)){$interval=0}
-            if($interval -eq 0){ Pdf-Row $label "Every minute (0)" "PASS" "PASS" "Every minute (0) - optimal" }
-            elseif($interval -ge 1 -and $interval -le 60){ Pdf-Row $label "${interval} minutes" "PASS" "PASS" "${interval} minutes (optimal)" }
-            elseif($interval -gt 60 -and $interval -le 1440){ Pdf-Row $label "${interval} minutes" "WARN" "WARN" "Interval is long" }
-            else { Pdf-Row $label "${interval} minutes" "CRITICAL" "CRITICAL" "Interval is too long" }
-            continue
-        }
-        if($label -eq 'Integrate Archive with IMAP Folder'){
-            $raw=$Data['archive.integrate_with_imap']
-            if($raw -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-            else { Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            continue
-        }
-        if($label -eq 'Number of Used Seats / License Max Users'){
-            $raw=$Data['icewarp.license.used_seats_note']
-            if([string]::IsNullOrEmpty($raw) -or $raw -like '*not available*'){
-                Pdf-Row $label "unavailable" "WARN" "WARN" "Unable to retrieve license usage - check via Admin API"
-            } else { Pdf-Row $label $raw "INFO" "INFO" $note }
-            continue
-        }
-        if($label -eq 'Enable Daytime Clock Synchronization'){
-            $raw=$Data['icewarp.daytime_clock_sync.enabled']
-            if($raw -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-            elseif($raw -eq '0'){ Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            else { Pdf-Row $label "Unknown" "WARN" "WARN" "Daytime sync setting not detected" }
-            continue
-        }
-        if($kind -eq 'V' -and $label -eq 'Disk (Total GB / Used %)'){
-            $usedPercent=$Data['storage.root_fs.used_percent']
-            if([string]::IsNullOrEmpty($usedPercent)){$usedPercent=0}
-            $status="INFO"
-            if(Pdf-IsNum $usedPercent){
-                if($usedPercent -ge 95){$status="CRITICAL"}
-                elseif($usedPercent -ge 80){$status="WARN"}
-                else {$status="PASS"}
-            }
-            Pdf-Row $label $Data['storage.root_fs.total_gb'] $status $status "Disk usage: ${usedPercent}%"
-            continue
-        }
-        if($kind -eq 'V' -and $label -eq 'CPU Usage'){
-            $load15=$Data['os.cpu.load15']; if([string]::IsNullOrEmpty($load15)){$load15=0}
-            $cores=$Data['os.cpu.count']; if([string]::IsNullOrEmpty($cores)){$cores=1}
-            $cpuPercent=0; $status="INFO"
-            if((Pdf-IsNum $load15) -and (Pdf-IsNum $cores) -and [double]$cores -gt 0){
-                $cpuPercent=[math]::Round(($load15/$cores)*100,2)
-                if($cpuPercent -gt 95){$status="CRITICAL"}
-                elseif($cpuPercent -gt 50){$status="WARN"}
-                else {$status="PASS"}
-            }
-            Pdf-Row $label $load15 $status $status "CPU load is ${cpuPercent}%"
-            continue
-        }
-        if($kind -eq 'V' -and $label -eq 'RAM (Total KB / Available KB)'){
-            $totalKb=$Data['os.memory.total_kb']; if([string]::IsNullOrEmpty($totalKb)){$totalKb=0}
-            $availKb=$Data['os.memory.available_kb']; if([string]::IsNullOrEmpty($availKb)){$availKb=0}
-            $value="Total(KB)=${totalKb} / Available KB=${availKb}"
-            $bkind="PASS"; $btext="PASS"; $msg=""
-            if((Pdf-IsNum $totalKb) -and (Pdf-IsNum $availKb) -and [double]$totalKb -gt 0){
-                $usedPercent=[math]::Round((($totalKb-$availKb)/$totalKb)*100,2)
-                if($usedPercent -gt 90){$bkind="CRITICAL";$btext="CRITICAL";$msg="RAM usage ${usedPercent}% (CRITICAL - above 90%)"}
-                elseif($usedPercent -gt 40){$bkind="WARN";$btext="WARN";$msg="RAM usage ${usedPercent}% (WARN - above 40%)"}
-                else {$msg="RAM usage ${usedPercent}% (OK)"}
-            } else { $msg="Unable to calculate RAM usage" }
-            Pdf-Row $label $value $bkind $btext $msg
-            continue
-        }
-        if($kind -eq 'V' -and $label -eq 'APP OS Last Update'){
-            $lastUpdate=$Data['os.last_update_date']
-            $value=$lastUpdate; if([string]::IsNullOrEmpty($value)){$value='unknown'}
-            $bkind="INFO"; $btext="INFO"; $msg=""
-            if(-not [string]::IsNullOrEmpty($lastUpdate) -and $lastUpdate -ne 'N/A' -and $lastUpdate -ne 'null'){
-                $days=Pdf-DaysAgo $lastUpdate
-                if($days -le 7){$bkind="PASS";$btext="PASS";$msg="OS updated recently (${days} days ago)"}
-                elseif($days -le 30){$bkind="WARN";$btext="WARN";$msg="OS update is ${days} days old (consider updating)"}
-                else {$bkind="CRITICAL";$btext="CRITICAL";$msg="OS is outdated (${days} days since last update)"}
-            } else { $msg="OS last update date not available" }
-            Pdf-Row $label $value $bkind $btext $msg
-            continue
-        }
-        if($kind -eq 'V' -and $label -eq 'Swap Usage (7 days)'){
-            $status=$Data['system.swap.status']; if([string]::IsNullOrEmpty($status)){$status='INFO'}
-            $msg=$Data['system.swap.message']
-            $bkind="INFO"; $btext="INFO"
-            switch($status){ 'PASS'{$bkind="PASS";$btext="PASS"} 'CRITICAL'{$bkind="CRITICAL";$btext="CRITICAL"} }
-            $usedPercent=$Data['system.swap.used_percent']; if([string]::IsNullOrEmpty($usedPercent)){$usedPercent=0}
-            Pdf-Row $label "${usedPercent}%" $bkind $btext $msg
-            continue
-        }
-        if($kind -eq 'V' -and $label -eq 'Database Scope'){
-            $scope=$Data['database.scope']; if([string]::IsNullOrEmpty($scope)){$scope='unknown'}
-            Pdf-Row $label $scope "PASS" "PASS" "Database scope: ${scope}"
-            continue
-        }
-        if($kind -eq 'V' -and ($keys -like 'security.intrusion.*.value*' -or $keys -eq 'security.intrusion.block_duration_minutes')){
-            $raw=$Data[$keys]
-            $r=Pdf-IntrusionValidate $keys $raw
-            $bkind,$btext,$note2=$r.Split('|')
-            Pdf-Row $label $raw $bkind $btext $note2
-            continue
-        }
-        if($kind -eq 'V'){
-            $val=Pdf-ClValue $keys
-            Pdf-Row $label $val "INFO" "INFO" $note
-            continue
-        }
-        $raw=Pdf-Raw $keys
-        if($kind -eq 'T'){
-            $expected=$note
-            if($raw -eq $expected){ Pdf-Row $label $raw "PASS" "PASS" "Expected: $expected" }
-            else { Pdf-Row $label $raw "WARN" "WARN" "Expected: $expected (current: $raw)" }
-            continue
-        }
-        switch($kind){
-            'F'{
-                if($raw -eq '1' -or $raw -eq 'true'){ Pdf-Row $label "Found" "PASS" "PASS" $note }
-                elseif($raw -eq '0' -or $raw -eq 'false'){ Pdf-Row $label "Missing" "CRITICAL" "CRITICAL" $note }
-                else { Pdf-Row $label "N/A" "INFO" "INFO" $note }
-            }
-            'B'{
-                if($raw -eq '1' -or $raw -eq 'true'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
-                else { Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-            }
-            'R'{
-                if($raw -eq '0' -or $raw -eq 'false'){ Pdf-Row $label "No" "PASS" "PASS" $note }
-                elseif($raw -eq '1' -or $raw -eq 'true'){ Pdf-Row $label "Yes" "CRITICAL" "CRITICAL" $note }
-                else { Pdf-Row $label "N/A" "INFO" "INFO" $note }
-            }
-            'L'{
-                if(-not [string]::IsNullOrEmpty($raw) -and $raw -ne '0'){ Pdf-Row $label "Enabled (level $raw)" "PASS" "PASS" $note }
-                elseif($raw -eq '0'){ Pdf-Row $label "Disabled" "CRITICAL" "CRITICAL" $note }
-                else { Pdf-Row $label "N/A" "INFO" "INFO" $note }
-            }
-            'Z'{
-                if($raw -eq '0'){ Pdf-Row $label "Disabled" "WARN" "WARN" "Backup emails is disabled (WARN)" }
-                elseif(-not [string]::IsNullOrEmpty($raw)){ Pdf-Row $label $raw "INFO" "INFO" $note }
-                else { Pdf-Row $label "not collected" "INFO" "INFO" $note }
-            }
-            'M'{
-                if($raw -eq '1' -or $raw -eq 'true'){ Pdf-Row $label "Yes" "WARN" "WARN" $note }
-                else { Pdf-Row $label "No" "PASS" "PASS" $note }
-            }
-            'G'{
-                if($raw -eq '1' -or $raw -eq 'true'){ Pdf-Row $label "Yes" "PASS" "PASS" $note }
-                else { Pdf-Row $label "No" "CRITICAL" "CRITICAL" $note }
-            }
-            'P'{
-                if($raw -eq '1' -or $raw -eq 'true'){ Pdf-Row $label "Active" "CRITICAL" "CRITICAL" $note }
-                else { Pdf-Row $label "Off" "PASS" "PASS" $note }
-            }
-            'W'{ Pdf-Row $label $raw "INFO" "INFO" $note }
-            'D'{
-                if($raw -eq '0' -or $raw -eq 'false'){ Pdf-Row $label "Disabled" "PASS" "PASS" $note }
-                elseif($raw -eq '1' -or $raw -eq 'true'){ Pdf-Row $label "Enabled" "WARN" "WARN" $note }
-                else { Pdf-Row $label "N/A" "INFO" "INFO" $note }
-            }
-            'H'{
-                $worst='pass'; $msgs=@()
-                $hk=$keys.Split(',')
-                foreach($k in $hk){
-                    $result=$Data["health.$k.result"]
-                    if(-not [string]::IsNullOrEmpty($result)){
-                        if($result -eq 'fail' -or $result -eq 'critical'){ $worst='fail' }
-                        elseif($result -eq 'warn' -and $worst -ne 'fail'){ $worst='warn' }
-                    }
-                    $m=$Data["health.$k.message"]
-                    if(-not [string]::IsNullOrEmpty($m)){ $msgs+=$m }
-                }
-                $bkind='INFO'
-                switch($worst){ 'pass'{$bkind='PASS'} 'warn'{$bkind='WARN'} 'fail'{$bkind='CRITICAL'} }
-                $joinedMsg=($msgs -join '; ')
-                if([string]::IsNullOrEmpty($joinedMsg)){ $joinedMsg=$note }
-                Pdf-Row $label "" $bkind $bkind $joinedMsg
-            }
-            default{
-                if(-not [string]::IsNullOrEmpty($raw)){ Pdf-Row $label $raw "INFO" "INFO" $note }
-                else { Pdf-Row $label "N/A" "INFO" "INFO" $note }
-            }
-        }
+        Pdf-ChecklistRow $section $label $kind $keys $note
     }
     $script:CHECKLIST_CAPTURED=$script:CHECKLIST_ROWS
     $script:CHECKLIST_ROWS=$null
     $script:CHECKLIST_CAPTURE_SECTION=""
 }
 
-function Build-TechnicalAppendix([hashtable]$Data){
-    Pdf-SectionHeader "Appendix: Collected Data"
+# --- Cover page and health summary ------------------------------------------------
+
+function Build-TechnicalReport([hashtable]$Data,[string]$OutPath){
+    $script:DATA=$Data
+    $script:_PDF_PAGES=[System.Collections.Generic.List[string]]::new()
+    $script:_PDF_CUR=""; $script:_PDF_Y=$script:PDF_TOP_Y; $script:_PDF_ROW_INDEX=0
+    $agentHost=Pdf-Raw 'agent.hostname'; if(-not $agentHost){$agentHost='unknown'}
+    $agentTime=Pdf-Raw 'agent.time'; if(-not $agentTime){$agentTime='unknown'}
+    $agentVer=Pdf-Raw 'agent.version'; if(-not $agentVer){$agentVer='unknown'}
+    $overallStatus=Pdf-Raw 'health.summary.overall'; if(-not $overallStatus){$overallStatus='n/a'}
+    $failCount=Pdf-Raw 'health.summary.failed'; if(-not $failCount){$failCount='0'}
+    $warnCount=Pdf-Raw 'health.summary.warnings'; if(-not $warnCount){$warnCount='0'}
+    $totalChecks=Pdf-Raw 'health.summary.total_checks'; if(-not $totalChecks){$totalChecks='0'}
+    Pdf-Rect 0 692 $script:PDF_PAGE_W 100 $script:PDF_C_NAVY
+    Pdf-Text $script:PDF_MARGIN 754 "IceWarp Health Check Report" F2 22 $script:PDF_C_WHITE
+    Pdf-Text $script:PDF_MARGIN 730 ("Based on IceWarp CheckList v{0}" -f $script:PDF_CHECKLIST_VERSION) F3 12 $script:PDF_C_WHITE
+    Pdf-Text $script:PDF_MARGIN 706 ("Host: {0}   Generated: {1}   Agent v{2}" -f $agentHost, $agentTime, $agentVer) F1 9.5 $script:PDF_C_WHITE
+    $script:_PDF_Y=660
+    $licType=Pdf-Raw 'icewarp.license.type'; if(-not $licType){$licType='unknown'}
+    $licExp=Pdf-Raw 'icewarp.license.trial_expiration'
+    if($licExp){ $licDisplay=$licExp }
+    elseif($licType -eq 'Evaluation'){ $licDisplay='Evaluation (expiration not detected)' }
+    else { $licDisplay='N/A (perpetual license)' }
+    $infoRows=@(
+        @('Company Name', (Pdf-Raw 'general.company')),
+        @('Mail Domain', (Pdf-Raw 'domain.primary.name')),
+        @('Technician', (Pdf-Raw 'general.technician')),
+        @('IceWarp Version', (Pdf-Raw 'icewarp.version')),
+        @('Antispam Last Update', (Pdf-Raw 'icewarp.antispam.last_update')),
+        @('Antivirus Last Update', (Pdf-Raw 'icewarp.antivirus.last_update')),
+        @('Last Backup Date/Time', (Pdf-Raw 'icewarp.backup.last_time')),
+        @('License Type', $licType),
+        @('License Expiration', $licDisplay),
+        @('SSL Expiration', (Pdf-Raw 'icewarp.ssl.expiration'))
+    )
+    foreach($row in $infoRows){
+        Pdf-Text ($script:PDF_MARGIN+8) $script:_PDF_Y ("{0}:" -f $row[0]) F2 9.5 $script:PDF_C_TEXT
+        Pdf-TextTrunc ($script:PDF_MARGIN+190) $script:_PDF_Y $row[1] F1 9.5 $script:PDF_C_GRAY 55
+        $script:_PDF_Y = $script:_PDF_Y - 16
+    }
+    $script:_PDF_Y = $script:_PDF_Y - 14
+    $bannerColor=$script:PDF_C_GRAY
+    switch($overallStatus){ 'pass'{$bannerColor=$script:PDF_C_GREEN} 'warn'{$bannerColor=$script:PDF_C_AMBER} 'fail'{$bannerColor=$script:PDF_C_RED} }
+    Pdf-Rect $script:PDF_MARGIN ($script:_PDF_Y-44) $script:PDF_CONTENT_W 44 $bannerColor
+    Pdf-Text ($script:PDF_MARGIN+14) ($script:_PDF_Y-20) ("OVERALL: $($overallStatus.ToUpper())") F2 15 $script:PDF_C_WHITE
+    Pdf-Text ($script:PDF_MARGIN+14) ($script:_PDF_Y-36) ("{0} checks run  -  {1} failed  -  {2} warnings" -f $totalChecks, $failCount, $warnCount) F1 9.5 $script:PDF_C_WHITE
+    $script:_PDF_Y = $script:_PDF_Y - 60
+    Pdf-Text $script:PDF_MARGIN $script:_PDF_Y "Legend:" F2 8.5 $script:PDF_C_TEXT
+    $lx=$script:PDF_MARGIN+46
+    foreach($status in @('PASS','CRITICAL','WARN','INFO')){
+        Pdf-Rect $lx ($script:_PDF_Y-3) 26 11 (Pdf-BadgeColor $status)
+        Pdf-Text ($lx+30) $script:_PDF_Y $status F1 8 $script:PDF_C_TEXT
+        $lx=$lx+30+6*$status.Length+14
+    }
+    $script:_PDF_Y = $script:_PDF_Y - 20
+    Pdf-SectionHeader "Health Summary"
     $script:_PDF_ROW_INDEX=0
-    $keys=@($Data.Keys) | Sort-Object
-    $categories=@{
-        'agent.'='Agent'; 'general.'='General'; 'domain.'='Domain'
-        'icewarp.'='IceWarp'; 'dns.'='DNS'; 'smtp.'='SMTP'
-        'security.'='Security'; 'watchdog.'='Watchdog'; 'monitor.'='Monitor'
-        'os.'='OS'; 'storage.'='Storage'; 'service.'='Service'
-        'database.'='Database'; 'backup.'='Backup'; 'archive.'='Archive'
-        'directory_cache.'='Directory Cache'; 'admin.'='Admin'
-        'health.'='Health'; 'mysql.'='MySQL'; 'system.'='System'
-        'fulltext.'='Full Text'; 'logging.'='Logging'; 'other.'='Other'
+    Pdf-PlainLine "Nine executive control areas. Detailed evidence follows in the checklist."
+    $summary=@(
+        @('backup','Backup & Recovery'), @('mail_flow','Mail Flow & DNS'), @('tls','Transport Security'),
+        @('access','Access & Authentication'), @('threat','Threat Protection'), @('resources','Server Resources'),
+        @('os_update','OS & Patching'), @('monitoring','Monitoring & Watchdog'), @('database','Database Platform')
+    )
+    foreach($item in $summary){
+        $res=Pdf-Raw ("health.{0}.result" -f $item[0])
+        if([string]::IsNullOrEmpty($res) -or $res -eq 'skip'){ continue }
+        $bkind=Pdf-HealthBadge $res
+        if(-not $bkind){ $bkind='INFO' }
+        Pdf-Row $item[1] "" $bkind $bkind (Pdf-Raw ("health.{0}.message" -f $item[0]))
     }
-    $groups=@{}
-    foreach($k in $keys){
-        $cat='other.'
-        foreach($prefix in $categories.Keys){
-            if($k -like "${prefix}*"){ $cat=$prefix; break }
+}
+
+function Render-CollectorStatus([object[]]$Results){
+    Pdf-SectionHeader "Collector Status"
+    if($null -eq $Results){
+        Pdf-PlainLine "Collector status not available"
+        return
+    }
+    $issues=@($Results | Where-Object { $null -ne $_ -and [string]$_.Status -ne 'ok' })
+    if($issues.Count -eq 0){
+        Pdf-PlainLine "All collectors ran OK"
+        return
+    }
+    foreach($issue in $issues){
+        Pdf-PlainLine (Pdf-Trunc ("{0}: {1} - {2}" -f $issue.Name, $issue.Status, $issue.Message) 110)
+    }
+}
+
+# --- Appendix ---------------------------------------------------------------------
+
+$script:PDF_APPENDIX_GROUPS=@(
+    [pscustomobject]@{ Title='Agent & General'; Prefixes=@('agent.','general.') },
+    [pscustomobject]@{ Title='DNS & Mail Flow'; Prefixes=@('dns.') },
+    [pscustomobject]@{ Title='IceWarp Server'; Prefixes=@('icewarp.') },
+    [pscustomobject]@{ Title='SMTP & Delivery'; Prefixes=@('queue.','smtp.') },
+    [pscustomobject]@{ Title='Security & Intrusion Prevention'; Prefixes=@('antispam.','security.') },
+    [pscustomobject]@{ Title='Backup & Archive'; Prefixes=@('archive.','backup.') },
+    [pscustomobject]@{ Title='Watchdog & Monitoring'; Prefixes=@('monitor.','watchdog.') },
+    [pscustomobject]@{ Title='OS, Storage & Resources'; Prefixes=@('os.','storage.','system.') },
+    [pscustomobject]@{ Title='Database'; Prefixes=@('database.','mysql.') },
+    [pscustomobject]@{ Title='Services, Logging & Admin'; Prefixes=@('admin.','directory_cache.','fulltext.','logging.') },
+    [pscustomobject]@{ Title='Domains'; Prefixes=@('domain.') },
+    [pscustomobject]@{ Title='HTTP / API'; Prefixes=@('http.') },
+    [pscustomobject]@{ Title='Health Evaluation'; Prefixes=@('health.') },
+    [pscustomobject]@{ Title='Other'; Prefixes=@() }
+)
+
+# Group header ($top = top edge): light title bar with accent, then the
+# navy KEY / VALUE band. Leaves the cursor at the first row's top edge.
+function Pdf-AppendixHeader([float]$top,[string]$title){
+    Pdf-Rect $script:PDF_MARGIN ($top-16) $script:PDF_CONTENT_W 16 $script:PDF_C_GROUP_BG
+    Pdf-Rect $script:PDF_MARGIN ($top-16) 3 16 $script:PDF_C_BLUEGRAY
+    Pdf-Text ($script:PDF_MARGIN+7) ($top-11) $title F2 8.5 $script:PDF_C_NAVY
+    Pdf-Rect $script:PDF_MARGIN ($top-33) $script:PDF_CONTENT_W 14 $script:PDF_C_NAVY
+    Pdf-Text ($script:PDF_MARGIN+5) ($top-29) 'KEY' F2 6.8 $script:PDF_C_WHITE
+    Pdf-Text ($script:PDF_MARGIN+225) ($top-29) 'VALUE' F2 6.8 $script:PDF_C_WHITE
+    $script:_PDF_Y=$top-30
+    $script:_PDF_ROW_INDEX=0
+}
+function Pdf-AppendixRow([string]$key,[string]$value){
+    $y=$script:_PDF_Y
+    $bg=$script:PDF_C_WHITE
+    if(($script:_PDF_ROW_INDEX % 2) -eq 1){ $bg=$script:PDF_C_GRAY_LIGHT }
+    $script:_PDF_ROW_INDEX++
+    Pdf-Rect $script:PDF_MARGIN ($y-14) $script:PDF_CONTENT_W 14 $bg
+    Pdf-Text ($script:PDF_MARGIN+5) ($y-10) (Pdf-Trunc $key 54) F1 7.2 $script:PDF_C_TEXT
+    Pdf-Text ($script:PDF_MARGIN+225) ($y-10) (Pdf-Trunc $value 82) F1 7.2 $script:PDF_C_VALUE
+    $script:_PDF_Y=$y-14
+}
+# Linux sorts the appendix with locale collation, which ignores punctuation
+# (e.g. stat_started before stat_start_raw). Compare on letters and digits.
+function Pdf-SortKeys([string[]]$keys){
+    return @($keys | Sort-Object -Property @{ Expression = { ($_ -replace '[^A-Za-z0-9]', '').ToLowerInvariant() } }, @{ Expression = { $_ } })
+}
+function Build-TechnicalAppendix([hashtable]$Data){
+    $script:DATA=$Data
+    [string[]]$allKeys=@($Data.Keys | ForEach-Object { [string]$_ })
+    Pdf-SectionHeader ("Appendix: Technical Data ({0} keys)" -f $allKeys.Count)
+    Pdf-PlainLine "Grouped by subsystem and sorted alphabetically. Raw keys are preserved for traceability."
+    Pdf-PlainLine "Long values are truncated in this appendix; the JSON export contains the complete values."
+
+    $groups=[ordered]@{}
+    foreach($g in $script:PDF_APPENDIX_GROUPS){ $groups[$g.Title]=[System.Collections.Generic.List[string]]::new() }
+    $groups['Other']=[System.Collections.Generic.List[string]]::new()
+    foreach($key in $allKeys){
+        # Linux appendix: health.* keys go to Health Evaluation group
+        # Allow all other keys to be categorized; "Other" group catches the rest
+        $target='Other'
+        foreach($g in $script:PDF_APPENDIX_GROUPS){
+            foreach($prefix in $g.Prefixes){ if($key.StartsWith($prefix)){ $target=$g.Title; break } }
+            if($target -ne 'Other'){ break }
         }
-        if(-not $groups.ContainsKey($cat)){ $groups[$cat]=@() }
-        $groups[$cat]+=$k
+        $groups[$target].Add($key)
     }
-    foreach($cat in $categories.Keys){
-        if(-not $groups.ContainsKey($cat)){ continue }
-        Pdf-AppendixCategory $categories[$cat]
-        foreach($k in $groups[$cat]){
-            $v=$Data[$k]
-            if([string]::IsNullOrEmpty($v)){ $v='(empty)' }
-            Pdf-Row $k $v "INFO" "INFO" ""
+
+    $freshPage=$true
+    foreach($title in $groups.Keys){
+        $keys=$groups[$title]
+        if($keys.Count -eq 0){ continue }
+        $top=if($freshPage){ $script:_PDF_Y - 8 } else { $script:_PDF_Y - 17 }
+        if(($top - 44) -lt $script:PDF_BOTTOM_Y){ Pdf-NewPage; $top=$script:_PDF_Y - 8 }
+        Pdf-AppendixHeader $top ("{0}  ({1} keys)" -f $title, $keys.Count)
+        $freshPage=$false
+        foreach($key in (Pdf-SortKeys $keys.ToArray())){
+            if(($script:_PDF_Y - 14) -lt $script:PDF_BOTTOM_Y){
+                Pdf-NewPage
+                Pdf-AppendixHeader ($script:_PDF_Y - 8) $title
+            }
+            # Linux appendix: for storage.root_home.* on same device as root_fs, show "null"
+            $val=Pdf-Raw $key
+            if($key -like 'storage.root_home.*'){
+                $rootVal=Pdf-Raw $key.Replace('root_home','root_fs')
+                if($val -eq $rootVal -or [string]::IsNullOrEmpty($val)){
+                    $val='null'
+                }
+            }
+            Pdf-AppendixRow $key $val
         }
     }
 }
 
+# --- Writer -----------------------------------------------------------------------
+
+function Pdf-Footer([int]$page,[int]$total){
+    $nl=$script:_NL
+    return ("{0} RG{1}0.5 w{1}36 34 m 576 34 l S{1}{2} rg{1}BT /F1 6.5 Tf 36 24 Td (IceWarp Health Check Report) Tj ET{1}BT /F1 6.5 Tf 536 24 Td (Page {3} of {4}) Tj ET{1}" -f $script:PDF_C_RULE, $nl, $script:PDF_C_GRAY, $page, $total)
+}
 function Pdf-WriteFile([string]$OutPath){
     $P=$script:_PDF_PAGES.Count
     if($P -eq 0){ Write-Warning "build_pdf: nothing to render"; return $null }
@@ -671,8 +714,10 @@ function Pdf-WriteFile([string]$OutPath){
     for($i=1;$i -le $P;$i++){
         $pageNum=$i+2; $contentNum=$i+2+$P
         $offsets[$pageNum]=$sb.Length
-        [void]$sb.Append("${pageNum} 0 obj$($nl)<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $($script:PDF_PAGE_W) $($script:PDF_PAGE_H)] /Resources << /Font << /F1 ${F_REG} 0 R /F2 ${F_BOLD} 0 R /F3 ${F_OBL} 0 R >> >> /Contents ${contentNum} 0 R >>$($nl)endobj$($nl)")
+        [void]$sb.Append("${pageNum} 0 obj$($nl)<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${F_REG} 0 R /F2 ${F_BOLD} 0 R /F3 ${F_OBL} 0 R >> >> /MediaBox [0 0 $($script:PDF_PAGE_W) $($script:PDF_PAGE_H)] /Contents ${contentNum} 0 R >>$($nl)endobj$($nl)")
         $stream=$script:_PDF_PAGES[$i-1]
+        # Every page after the cover carries the Linux-style footer.
+        if($i -gt 1){ $stream += (Pdf-Footer $i $P) }
         $offsets[$contentNum]=$sb.Length
         [void]$sb.Append("${contentNum} 0 obj$($nl)<< /Length $($stream.Length) >>$($nl)stream$($nl)${stream}endstream$($nl)endobj$($nl)")
     }
@@ -695,9 +740,13 @@ function Pdf-WriteFile([string]$OutPath){
     return $OutPath
 }
 
-function Build-TechnicalReportPdf([hashtable]$Data,[string]$OutPath){
+function Build-TechnicalReportPdf([hashtable]$Data,[string]$OutPath,[object[]]$CollectorResults){
     Build-TechnicalReport $Data $OutPath
+    # As on Linux, the checklist starts on page 2 and the appendix on its own page.
+    Pdf-NewPage
     Render-Checklist $Data
+    Render-CollectorStatus $CollectorResults
+    Pdf-NewPage
     Build-TechnicalAppendix $Data
     Pdf-Finish
     return (Pdf-WriteFile $OutPath)
