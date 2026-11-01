@@ -1,4 +1,10 @@
 
+## [Unreleased]
+
+### Documentation
+- Added the full project audit under the repository `docs/` folder
+  (`01-PROJECT-OVERVIEW.md` to `05-ROADMAP-NEXT-STEPS.md`). No code changes.
+
 ## [0.1.5] - 2026-10-28
 
 ### Fixed

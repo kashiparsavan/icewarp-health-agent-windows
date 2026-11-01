@@ -3,6 +3,15 @@
 All notable changes to the Windows implementation are documented here.
 The Linux agent keeps its own repository and changelog.
 
+## [Unreleased]
+
+### Documentation
+- Added the full project audit under `docs/`: `01-PROJECT-OVERVIEW.md`,
+  `02-ARCHITECTURE-AND-FLOW.md`, `03-CODE-AUDIT.md` (47 findings),
+  `04-PROGRESS-REPORT.md` (about 60% overall) and `05-ROADMAP-NEXT-STEPS.md`.
+- Note: this changelog has no entries for 0.1.5-0.1.7 (see `windows/CHANGELOG.md`
+  and tags `windows-v0.1.5`..`windows-v0.1.7`). Tracked as audit item B-41.
+
 ## [0.1.4] - 2026-10-28
 
 ### Changed
