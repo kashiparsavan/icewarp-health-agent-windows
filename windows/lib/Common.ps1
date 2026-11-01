@@ -888,6 +888,8 @@ Options:
   -Company <name>         Override company name
   -Technician <name>      Override technician name
   -ConfigPath <path>      Use an alternate PSD1 configuration file
+  -Configurator           Run the configurator in dry-run mode (shows [OK]/[CHG])
+  -Apply                  Apply the recommended configuration via tool.exe
   -Help                   Show this help
 
 Defaults:

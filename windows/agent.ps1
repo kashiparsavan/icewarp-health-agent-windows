@@ -26,6 +26,15 @@ Override the technician name from the configuration file.
 .PARAMETER ConfigPath
 Use an alternate PSD1 configuration file. The default is
 config\agent.local.psd1, falling back to config\agent.example.psd1.
+
+.PARAMETER Configurator
+Run the configurator in dry-run mode. Compares the live IceWarp
+configuration against config/recommended.psd1 and prints [OK] for
+correct values and [CHG] for incorrect or unset values.
+
+.PARAMETER Apply
+Apply the recommended configuration. Executes tool.exe set system
+<key> <value> for every [CHG] row.
 #>
 [CmdletBinding()]
 param(
@@ -34,8 +43,9 @@ param(
     [string]$Only,
     [string]$Company,
     [string]$Technician,
-    [Alias('Config')]
     [string]$ConfigPath,
+    [switch]$Configurator,
+    [switch]$Apply,
     [switch]$Help
 )
 
@@ -78,6 +88,29 @@ try {
         $collectors = @($collectors | Where-Object {
             Test-CollectorFilter -Name (Get-CollectorName -Root $script:AgentRoot -Path $_.FullName) -Filter $Only
         })
+    }
+
+    # --- Configurator: compare or apply recommended settings ---
+    if ($Configurator -or $Apply) {
+        $configuratorLib = Join-Path $libRoot 'Configurator.ps1'
+        if (-not (Test-Path -LiteralPath $configuratorLib -PathType Leaf)) {
+            throw "Configurator library not found: $configuratorLib"
+        }
+        . $configuratorLib
+
+        $recommendedPath = Join-Path $script:AgentRoot 'config\recommended.psd1'
+        $toolPath = $config.ToolPath
+        if (-not $toolPath) { $toolPath = 'C:\Program Files\IceWarp\tool.exe' }
+
+        $recommended = Get-RecommendedConfig -ConfigPath $recommendedPath
+        $results = Compare-RecommendedConfig -Recommended $recommended -ToolPath $toolPath
+
+        if ($Apply) {
+            Invoke-ApplyConfig -Results $results -ToolPath $toolPath
+        } else {
+            Format-ConfigDiff -Results $results
+        }
+        exit 0
     }
 
     if ($List) {

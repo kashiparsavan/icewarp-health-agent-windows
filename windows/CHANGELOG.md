@@ -2,6 +2,25 @@
 
 All notable changes to the Windows implementation are documented here.
 The Linux agent keeps its own changelog in the repository root.
+## [0.1.12] - 2026-11-01
+
+New feature: IceWarp Configurator.
+
+### Added
+- **`lib/Configurator.ps1`.** Compares the live IceWarp configuration
+  against `config/recommended.psd1` and either reports differences
+  (`-Configurator`, dry-run) or applies them (`-Apply`, runs
+  `tool.exe set system <key> <value>`).
+- **`config/recommended.psd1`.** 62 recommended settings covering
+  Intrusion Prevention thresholds (50/360), Admin Email, IMAP/POP3
+  disabled, DNSBL, rejection rules, archive, protocol hardening,
+  SMTP delivery, backup/watchdog/monitoring, and logging.
+- **`agent.ps1 -Configurator` / `-Apply`.** New flags wired into the
+  agent entry point. `-Configurator` prints `[OK]` for correct
+  values and `[CHG]` for incorrect/unset values, with a summary
+  ("Already correct: X, Will change: Y"). `-Apply` executes
+  `tool.exe set system` for every `[CHG]` row.
+
 ## [0.1.11] - 2026-11-01
 
 Bug fixes for four critical issues found during lab-server testing.
