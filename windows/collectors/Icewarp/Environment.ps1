@@ -27,6 +27,6 @@ $data['icewarp.temp.default'] = (Join-Path $iceHome 'temp')
 
 # On Windows the IceWarp paths are read through tool.exe, so the source is
 # always tool_exe. (Linux uses tool.sh and reports tool_sh.)
-$data['icewarp.path.source'] = 'tool_exe'
+# NOTE: icewarp.path.source is set by StoragePaths.ps1 (authoritative for paths)
 
 return $data

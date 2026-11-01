@@ -39,29 +39,36 @@ $data['icewarp.installed'] = (Test-Path -LiteralPath $Context.Config.IceWarpHome
 $data['general.date'] = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
 
 # general.os.* - Windows equivalents of /etc/os-release. The Linux schema
-# stores general.os.version as a JSON number (e.g. 9.8), so emit the Windows
-# major.minor pair ("10.0") rather than the three-part build string, which
-# could not be coerced to a number.
-$os = $null
-try {
-    $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
-} catch { }
-if ($os) {
-    $data['general.os.name'] = [string]$os.Caption
-    $data['general.os.pretty'] = [string]$os.Caption
+    # stores general.os.version as a JSON number (e.g. 9.8), so emit the Windows
+    # major.minor pair ("10.0") rather than the three-part build string, which
+    # could not be coerced to a number.
+    # FIX: User requirement - general.os.version MUST be a string in JSON.
+    # Emit as three-part version (major.minor.build) to force string coercion.
+    $os = $null
+    try {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+    } catch { }
+    if ($os) {
+        $data['general.os.name'] = [string]$os.Caption
+        $data['general.os.pretty'] = [string]$os.Caption
 
-    $versionParts = @(([string]$os.Version).Split('.'))
-    $major = 0
-    $minor = 0
-    if ($versionParts.Count -ge 1 -and [int]::TryParse($versionParts[0], [ref]$major)) {
-        if ($versionParts.Count -ge 2 -and [int]::TryParse($versionParts[1], [ref]$minor)) {
-            $data['general.os.version'] = ('{0}.{1}' -f $major, $minor)
+        $versionParts = @(([string]$os.Version).Split('.'))
+        $major = 0
+        $minor = 0
+        $build = 0
+        if ($versionParts.Count -ge 1 -and [int]::TryParse($versionParts[0], [ref]$major)) {
+            if ($versionParts.Count -ge 2 -and [int]::TryParse($versionParts[1], [ref]$minor)) {
+                if ($versionParts.Count -ge 3 -and [int]::TryParse($versionParts[2], [ref]$build)) {
+                    $data['general.os.version'] = ('{0}.{1}.{2}' -f $major, $minor, $build)
+                } else {
+                    $data['general.os.version'] = ('{0}.{1}.0' -f $major, $minor)
+                }
+            } else {
+                $data['general.os.version'] = [string]$major
+            }
         } else {
-            $data['general.os.version'] = [string]$major
+            $data['general.os.version'] = ''
         }
-    } else {
-        $data['general.os.version'] = ''
-    }
 } else {
     $data['general.os.name'] = [string]$env:OS
     $data['general.os.pretty'] = [string]$env:OS

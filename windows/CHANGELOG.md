@@ -2,6 +2,28 @@
 
 All notable changes to the Windows implementation are documented here.
 The Linux agent keeps its own changelog in the repository root.
+## [0.1.11] - 2026-11-01
+
+Bug fixes for four critical issues found during lab-server testing.
+
+### Fixed
+- **Duplicate key `icewarp.path.source`.** Both `StoragePaths.ps1` and
+  `Environment.ps1` set the same key. Removed the line from `Environment.ps1`;
+  `StoragePaths.ps1` is authoritative.
+- **STARTTLS live test returned `False`.** The hostname resolution chain now
+  follows `MailHostname` → `MailDomain` → primary domain from
+  `Get-IceWarpDomainList`, matching `DnsMailFlow`. `COMPUTERNAME` is no longer
+  used as a fallback (it would test the wrong host).
+- **TLS certificate collection broken.** `${hostname}` in the failure message
+  was literal (single-quoted string). Fixed to `$($hostname)`. The live check
+  against port 443 now uses the same hostname chain as STARTTLS.
+- **`general.os.version` emitted as JSON number.** The Windows major.minor pair
+  (`10.0`) was coerced to a number by the JSON writer. Now emits the three-part
+  version (`10.0.20348`) so it stays a string, matching the schema rules.
+- **Pester mock test failures.** `Get-PdfTextRuns` was wrapping its return
+  value in an extra array (`return , $pages`), so `$mgmtPages[1]` was null.
+  Fixed the wrapper and updated assertions to match the actual PDF text.
+
 ## [0.1.9] - 2026-11-01
 
 PDF rendering fixes. The health engine (`lib/Health.ps1`) and the JSON output

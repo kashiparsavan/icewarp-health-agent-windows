@@ -90,7 +90,7 @@
                  "general.icewarp.version":  "string",
                  "general.os.name":  "string",
                  "general.os.pretty":  "string",
-                 "general.os.version":  "number",
+                 "general.os.version": "string",
                  "general.technician":  "string",
                  "health.access.message":  "string",
                  "health.access.result":  "string",

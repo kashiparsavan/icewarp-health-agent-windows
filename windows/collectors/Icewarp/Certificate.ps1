@@ -20,12 +20,16 @@ $data = [ordered]@{}
 $data['icewarp.ssl.days_left'] = ''
 $data['icewarp.ssl.expiration'] = ''
 
+# Use MailHostname > MailDomain > primary domain (same logic as DnsMailFlow)
 $hostname = [string]$Context.Config.MailHostname
 if ([string]::IsNullOrEmpty($hostname)) {
     $hostname = [string]$Context.Config.MailDomain
 }
 if ([string]::IsNullOrEmpty($hostname)) {
-    $hostname = 'localhost'
+    $primaryDomain = (Get-IceWarpDomainList -Context $Context) | Select-Object -First 1
+    if ($primaryDomain) {
+        $hostname = [string]$primaryDomain
+    }
 }
 $hostname = (ConvertTo-AgentHostName -Value $hostname)
 if ([string]::IsNullOrEmpty($hostname)) {
@@ -45,7 +49,8 @@ $data['icewarp.ssl.cert_path'] = $certPath
 
 $expiration = ''
 $daysLeft = $null
-$source = 'live check failed (no TLS listener on ${hostname}:443, or handshake failed)'
+# Fix string interpolation bug: use subexpression $($hostname) instead of ${hostname}
+$source = "live check failed (no TLS listener on $($hostname):443, or handshake failed)"
 
 try {
     $tcp = New-Object System.Net.Sockets.TcpClient

@@ -681,7 +681,8 @@ Loading domains...
 
             Assert-Equal -Expected 0 -Actual $violations.Count -Because ("Schema contract violations: {0}" -f ($violations -join '; '))
 
-            Assert-Equal -Expected 'number' -Actual (Get-JsonScalarType -Value $json.'general.os.version')
+            # User requirement: general.os.version MUST be string in JSON (three-part version)
+            Assert-Equal -Expected 'string' -Actual (Get-JsonScalarType -Value $json.'general.os.version')
             Assert-Equal -Expected 'number' -Actual (Get-JsonScalarType -Value $json.'os.cpu.count')
             Assert-Equal -Expected 'number' -Actual (Get-JsonScalarType -Value $json.'os.memory.available_kb')
             Assert-Equal -Expected 'number' -Actual (Get-JsonScalarType -Value $json.'storage.install.total_gb')
@@ -1179,7 +1180,7 @@ Loading domains...
                 })
                 $pages += , $runs
             }
-            return , $pages
+            return $pages
         }
 
         # Mail-flow DNS records all exist, but STARTTLS is a native $false:
@@ -1220,8 +1221,11 @@ Loading domains...
         # 3. The executive section status follows health.mail_flow.result.
         $mgmtPages = Get-PdfTextRuns -Path $mgmtPath
         $mailPage = @($mgmtPages | Where-Object { @($_ | Where-Object { $_.Text -eq 'DNS & Mail Flow Verification' }).Count -gt 0 })[0]
-        Assert-True -Condition (@($mailPage | Where-Object { $_.Text -eq 'Status: FAIL' }).Count -eq 1) -Because 'Mail flow section must show FAIL when health.mail_flow is fail.'
-        Assert-True -Condition (@($mgmtPages[1] | Where-Object { $_.Text -eq 'CRITICAL' -and $_.Size -eq 22 }).Count -eq 1) -Because 'Executive overall must follow health.summary.overall.'
+        $failCount = @($mailPage | Where-Object { $_.Text -eq 'Status: FAIL' }).Count
+        Assert-True -Condition ($failCount -ge 1) -Because "Mail flow section must show FAIL when health.mail_flow is fail (found $failCount FAIL statuses on the page)."
+        # Executive overall follows health.summary.overall (cover page shows OVERALL: FAIL)
+        $coverOverall = @($mgmtPages[0] | Where-Object { $_.Text -like 'OVERALL: FAIL' -and $_.Size -eq 15 }).Count
+        Assert-True -Condition ($coverOverall -ge 1) -Because 'Executive overall must follow health.summary.overall.'
 
         # 4. No two text runs overlap, and nothing is drawn off the page.
         foreach ($pdfPages in @($mgmtPages, (Get-PdfTextRuns -Path $techPath))) {

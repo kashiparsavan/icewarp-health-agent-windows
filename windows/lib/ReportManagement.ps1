@@ -247,6 +247,38 @@ function ConvertTo-ManagementChecklist(){
     return @{sections=$sections; items=$items}
 }
 
+$script:MR_SECTION_PILLARS=@{
+    'DNS & Mail Flow Verification'=@('mail_flow')
+    'Logging'=@()
+    'Backup, Watchdog and Monitoring'=@('backup','monitoring')
+    'Migration Safety'=@()
+    'Storage, Certificates and Services'=@('tls','threat')
+    'SMTP Delivery Settings'=@()
+    'SMTP Protocol Hardening'=@()
+    'Intrusion Prevention - Block Rules'=@()
+    'Rejection Rules and Access'=@('access')
+    'Archive Settings'=@()
+    'Protocol and Access Hardening'=@('access')
+    'APP OS / Infrastructure'=@('resources','os_update')
+    'Database'=@('database')
+    'MySQL Server (Remote DB)'=@()
+}
+
+function Get-SectionHealthStatus([string]$sec){
+    $st=@('na')
+    if($script:MR_SECTION_PILLARS.ContainsKey($sec)){
+        foreach($p in $script:MR_SECTION_PILLARS[$sec]){
+            $st+=(Mr-HealthStatus $p)
+        }
+    }
+    # worst: fail > warn > pass > info > na
+    if($st -contains 'fail'){ return 'fail' }
+    if($st -contains 'warn'){ return 'warn' }
+    if($st -contains 'pass'){ return 'pass' }
+    if($st -contains 'info'){ return 'info' }
+    return 'na'
+}
+
 function Get-ManagementModel([hashtable]$checklist){
     $m=@{ Total=0; Pass=0; Warn=0; Fail=0; Info=0; Na=0 }
     $sectionModels=[System.Collections.Generic.List[object]]::new()
@@ -279,7 +311,12 @@ function Get-ManagementModel([hashtable]$checklist){
                 })
             }
         }
-        $s.Status=if($s.Fail -gt 0){'fail'}elseif($s.Warn -gt 0){'warn'}elseif($s.Pass -gt 0){'pass'}elseif($s.Info -gt 0){'info'}else{'na'}
+        # Combine checklist status with health pillar status - worst wins
+        $checklistStatus=if($s.Fail -gt 0){'fail'}elseif($s.Warn -gt 0){'warn'}elseif($s.Pass -gt 0){'pass'}elseif($s.Info -gt 0){'info'}else{'na'}
+        $healthStatus=Get-SectionHealthStatus $sec
+        # Priority: fail > warn > pass > info > na
+        $statusPriority=@{'fail'=4; 'warn'=3; 'pass'=2; 'info'=1; 'na'=0}
+        $s.Status=if($statusPriority[$healthStatus] -gt $statusPriority[$checklistStatus]){ $healthStatus } else { $checklistStatus }
         [void]$sectionModels.Add([pscustomobject]$s)
         $secIndex++
     }
@@ -336,10 +373,11 @@ function Mr-LightPage([string]$eyebrow,[string]$title,[string]$subtitle,[int]$pa
     Mr-TextRight 568 27 ("Page {0}" -f $pageNo) F1 6.2 $script:MR_C.Muted
 }
 function Mr-Pill([double]$x,[double]$y,[string]$status){
+    $label=switch($status){ 'fail'{'FAIL'} 'warn'{'WARN'} 'pass'{'HEALTHY'} 'info'{'INFO'} default{'N/A'} }
     $fill=if($status -eq 'fail'){ $script:MR_C.ActionPill } else { $script:MR_C.Review }
     $ink=if($status -eq 'fail'){ $script:MR_C.White } else { $script:MR_C.Dark }
     Mr-RoundRect $x $y 54 14 7 $fill
-    Mr-TextCenter ($x+27) ($y+3) (Mr-StatusWord $status) F2 6.2 $ink
+    Mr-TextCenter ($x+27) ($y+3) $label 'Helvetica-Bold' 8 $ink
 }
 
 # --- Page 1: cover ----------------------------------------------------------------------
@@ -376,9 +414,14 @@ function Mr-Cover($m,[string]$date,[string]$version){
     $pillFill=switch($m.Overall){ 'fail'{$C.ActionPill} 'warn'{$C.Review} default{$C.HealthyBar} }
     $pillInk=if($m.Overall -eq 'warn'){ $C.Dark } else { $C.White }
     $ringColor=switch($m.Overall){ 'fail'{$C.Action} 'warn'{$C.Review} default{$C.Teal} }
+    $overallWord=switch($m.Overall){ 'fail'{'FAIL'} 'warn'{'WARNING'} default{'HEALTHY'} }
+    $overallColor=switch($m.Overall){ 'fail'{$C.Action} 'warn'{$C.Review} default{$C.Healthy} }
     Mr-RoundRect 44 398 196 30 8 $pillFill
     Mr-Text 56 408 ("{0}  |  {1}% pass rate" -f $m.Posture, $m.Score) F2 8.6 $pillInk
     Mr-Text 44 366 ("{0} controls assessed across {1} operational areas" -f $m.Total, $m.Sections.Count) F1 8.2 $C.CoverMuted
+    # Overall status word (CRITICAL/WARNING/HEALTHY) like Linux PDF
+    Mr-Rect 44 442 540 44 $overallColor
+    Mr-Text 50 466 ("OVERALL: {0}" -f $overallWord) F2 15 $C.White
 
     Mr-Ring 500 420 48 8 $C.GaugeTrack
     Mr-Arc 500 420 48 5 $ringColor ($m.Score/100.0)
@@ -525,6 +568,8 @@ function Mr-ControlAreas($m){
         Mr-Dot ($x+14) ($top-16) 4 $color
         Mr-Text ($x+25) ($top-19) (Mr-Fit $s.Name 8.2 190) F2 8.2 $C.Ink
         Mr-TextRight ($x+244) ($top-19) (Mr-StatusWord $s.Status) F2 6.4 $color
+        $statusText=switch($s.Status){ 'fail'{'FAIL'} 'warn'{'REVIEW'} 'pass'{'HEALTHY'} 'info'{'INFO'} default{'N/A'} }
+        Mr-Text ($x+14) ($top-44) ("Status: " + $statusText) F2 6.4 $color
         $scored=$s.Pass+$s.Warn+$s.Fail+$s.Info
         if($scored -eq 0){
             Mr-Text ($x+14) ($top-35) 'No applicable controls' F1 6.1 $C.Muted
@@ -580,7 +625,7 @@ function Mr-RecommendedActions($m,[int]$pageNo){
         $n++
         Mr-Card 44 ($top-56) 524 56 6
         Mr-Rect 44 ($top-56) 3 56 (Mr-StatusColor $a.Status)
-        Mr-Text 56 ($top-18) ('{0:D2}' -f $n) F2 7.2 $C.TealDark
+        Mr-Text 56 ($top-18) ("{0}." -f $n) F2 8 $C.TealDark
         Mr-Text 82 ($top-20) (Mr-Fit $a.Title 8.8 400) F2 8.8 $C.Ink
         Mr-Pill 504 ($top-22) $a.Status
         Mr-Text 82 ($top-33) (Mr-Fit $a.Section 6.3 410) F1 6.3 $C.Muted

@@ -95,13 +95,18 @@ if ([string]::IsNullOrEmpty($sizeBytes)) {
 # --- starttls_live_test: a real SMTP STARTTLS negotiation on port 25.
 # The shared helper reads the 220 banner, sends EHLO, checks for STARTTLS,
 # issues STARTTLS, and bounds both the connect and the TLS handshake. ---
+# Use MailHostname > MailDomain > primary domain (same logic as DnsMailFlow)
 $startTlsHost = ConvertTo-AgentHostName -Value ([string]$Context.Config.MailHostname)
 if ([string]::IsNullOrEmpty($startTlsHost)) {
     $startTlsHost = ConvertTo-AgentHostName -Value ([string]$Context.Config.MailDomain)
 }
 if ([string]::IsNullOrEmpty($startTlsHost)) {
-    $startTlsHost = ConvertTo-AgentHostName -Value ([string]$env:COMPUTERNAME)
+    $primaryDomain = (Get-IceWarpDomainList -Context $Context) | Select-Object -First 1
+    if ($primaryDomain) {
+        $startTlsHost = ConvertTo-AgentHostName -Value ([string]$primaryDomain)
+    }
 }
+# Never fall back to COMPUTERNAME - that would test against wrong hostname
 $networkTimeout = 10
 try {
     $parsedTimeout = [int]$Context.Config.NetworkTimeoutSeconds
