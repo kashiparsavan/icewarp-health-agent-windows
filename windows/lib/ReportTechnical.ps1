@@ -120,15 +120,125 @@ function Pdf-ClValue([string]$keys){
         $parts=@(); $ks=$keys.Split(',')
         foreach($k in $ks){
             $short=$k.Substring($k.LastIndexOf('.')+1)
-            $parts+=("{0}={1}" -f $short, $script:DATA[$k])
+            $parts+=("{0}={1}" -f $short, (Pdf-Raw $k))
         }
         return ($parts -join ', ')
     } else {
-        $v=$script:DATA[$keys]
+        $v=Pdf-Raw $keys
         if([string]::IsNullOrEmpty($v)){ $v='(empty)' }
         return $v
     }
 }
+# Normalized string form of a data value. Native booleans become 'true' or
+# 'false' so they compare correctly with the string literals used below
+# (PowerShell converts '0'/'false' to $true when comparing against a bool).
+function Pdf-Raw([string]$key){
+    if(-not $script:DATA.Contains($key)){ return '' }
+    $v=$script:DATA[$key]
+    if($null -eq $v){ return '' }
+    if($v -is [bool]){ if($v){ return 'true' } else { return 'false' } }
+    return [string]$v
+}
+
+# Checklist rows whose status is owned by the health engine (lib/Health.ps1).
+# For these rows the badge and note come from health.<name>.result/.message,
+# never from thresholds re-implemented in the renderer (CLAUDE.md Rule 3.2).
+$script:PDF_HEALTH_ROW_MAP=@{
+    'Enable System Backup'='backup.auto'
+    'Last Backup Date and Time'='backup.last_time'
+    'Enable Database Backup - Accounts'='backup.db.accounts'
+    'Enable Database Backup - AntiSpam'='backup.db.as'
+    'Enable Database Backup - GroupWare'='backup.db.gw'
+    'Enable Database Backup - Directory Cache'='backup.db.cache'
+    'Enable System Watchdog'='watchdog.control'
+    'Enable System Monitor (Mem/Disk/CPU)'='monitor.enabled'
+    'Watchdog - SMTP'='watchdog.smtp'
+    'Watchdog - POP3/IMAP'='watchdog.pop3'
+    'Watchdog - IM/VoIP'='watchdog.im'
+    'Watchdog - GroupWare'='watchdog.gw'
+    'Watchdog Interval'='watchdog.interval'
+    'Set Directory Cache Schedule'='directory_cache'
+    'Check for Certificates'='tls'
+    'Use TLS/SSL (Secured Delivery)'='tls_delivery'
+    'Enable SSL/TLS'='tls_delivery'
+    'Block IP - Connections in 1 Minute'='intrusion.block_connections'
+    'Amount of Time IP is Blocked (minutes)'='intrusion.block_duration'
+    'Set customers-stat@parsavan.com'='admin_email'
+    'Set Admin Email'='admin_email'
+    'Password Policy Min Length'='password_policy'
+    'Disable DIGEST-MD5'='digest_md5'
+    'Session Timeout'='session_timeout'
+    'Disable IMAP'='service.imap'
+    'Disable POP3'='service.pop3'
+    'Disk (Total GB / Used %)'='disk.overall'
+    'CPU Usage'='cpu'
+    'RAM (Total KB / Available KB)'='memory'
+    'APP OS Last Update'='os_update'
+    'Database Type'='database'
+}
+
+# Map a health result to the badge vocabulary. Returns $null when the
+# result is unknown so the caller can fall back to the raw-data rule.
+function Pdf-HealthBadge([string]$result){
+    switch($result){
+        'pass'     { return 'PASS|PASS' }
+        'ok'       { return 'PASS|PASS' }
+        'warn'     { return 'WARN|WARN' }
+        'fail'     { return 'CRITICAL|CRITICAL' }
+        'critical' { return 'CRITICAL|CRITICAL' }
+        'skip'     { return 'INFO|SKIP' }
+    }
+    return $null
+}
+
+# Display value for a health-owned row (evidence only; the status comes from health).
+function Pdf-HealthRowValue([string]$label,[string]$kind,[string]$keys){
+    switch($label){
+        'CPU Usage' {
+            $l=Pdf-Raw 'os.cpu.load1'; if($l){ return "$l% (1-min)" }; return '(empty)'
+        }
+        'RAM (Total KB / Available KB)' {
+            return ('Total(KB)={0} / Available KB={1}' -f (Pdf-Raw 'os.memory.total_kb'), (Pdf-Raw 'os.memory.available_kb'))
+        }
+        'Disk (Total GB / Used %)' {
+            return ('{0} GB / {1}%' -f (Pdf-Raw 'storage.root_fs.total_gb'), (Pdf-Raw 'storage.root_fs.used_percent'))
+        }
+        'Disable DIGEST-MD5' {
+            switch(Pdf-Raw $keys){ 'true'{ return 'DIGEST-MD5 enabled' } 'false'{ return 'DIGEST-MD5 disabled' } }
+            return '(empty)'
+        }
+        'Watchdog Interval' {
+            $m=Pdf-Raw $keys
+            if($m -eq '0'){ return 'Every minute (0)' }
+            if($m){ return "$m minutes" }
+            return '(empty)'
+        }
+    }
+    if($label -eq 'Disable IMAP' -or $label -eq 'Disable POP3'){
+        $s=Pdf-Raw $keys
+        if($s -eq '1' -or $s -eq 'true'){ return 'Service active' }
+        if($s -eq '0' -or $s -eq 'false'){ return 'Service disabled' }
+    }
+    $raw=Pdf-Raw $keys
+    if($kind -eq 'B'){ if($raw -eq '1' -or $raw -eq 'true'){ return 'Enabled' } else { return 'Disabled' } }
+    if($kind -eq 'R'){ if($raw -eq '1' -or $raw -eq 'true'){ return 'Yes' } elseif($raw -eq '0' -or $raw -eq 'false'){ return 'No' } }
+    if([string]::IsNullOrEmpty($raw)){ return '(empty)' }
+    return $raw
+}
+
+# Render a checklist row from the health engine. Returns $true when rendered.
+function Pdf-TryHealthRow([string]$label,[string]$kind,[string]$keys){
+    if(-not $script:PDF_HEALTH_ROW_MAP.ContainsKey($label)){ return $false }
+    $name=$script:PDF_HEALTH_ROW_MAP[$label]
+    $result=Pdf-Raw "health.$name.result"
+    $badge=Pdf-HealthBadge $result
+    if($null -eq $badge){ return $false }
+    $bkind,$btext=$badge.Split('|')
+    $msg=Pdf-Raw "health.$name.message"
+    Pdf-Row $label (Pdf-HealthRowValue $label $kind $keys) $bkind $btext $msg
+    return $true
+}
+
 function Pdf-IntrusionValidate([string]$key,[string]$value){
     $expected=""
     switch($key){
@@ -223,7 +333,7 @@ function Build-TechnicalReport([hashtable]$Data,[string]$OutPath){
         $res=$Data["health.$key.result"]
         if([string]::IsNullOrEmpty($res)){ $res='skip' }
         if($res -eq 'skip'){ continue }
-        $bkind=switch($res){ 'pass'{'PASS'} 'warn'{'WARN'} 'fail'{'CRITICAL'} 'critical'{'CRITICAL'} default{'INFO'} }
+        $bkind=switch($res){ 'pass'{'PASS'} 'ok'{'PASS'} 'warn'{'WARN'} 'fail'{'CRITICAL'} 'critical'{'CRITICAL'} default{'INFO'} }
         $msg=$Data["health.$key.message"]
         Pdf-Row $title "" $bkind $bkind $msg
     }
@@ -267,6 +377,8 @@ function Render-Checklist([hashtable]$Data){
                 continue
             }
         }
+        # Rows owned by the health engine: status comes from health.*.
+        if(Pdf-TryHealthRow $label $kind $keys){ continue }
         if($label -eq 'Enable Database Backup'){
             $raw=$Data['icewarp.database_backup.enabled']
             if($raw -eq '1'){ Pdf-Row $label "Enabled" "PASS" "PASS" $note }
@@ -367,7 +479,7 @@ function Render-Checklist([hashtable]$Data){
             $load15=$Data['os.cpu.load15']; if([string]::IsNullOrEmpty($load15)){$load15=0}
             $cores=$Data['os.cpu.count']; if([string]::IsNullOrEmpty($cores)){$cores=1}
             $cpuPercent=0; $status="INFO"
-            if(Pdf-IsNum $load15 -and Pdf-IsNum $cores -and $cores -gt 0){
+            if((Pdf-IsNum $load15) -and (Pdf-IsNum $cores) -and [double]$cores -gt 0){
                 $cpuPercent=[math]::Round(($load15/$cores)*100,2)
                 if($cpuPercent -gt 95){$status="CRITICAL"}
                 elseif($cpuPercent -gt 50){$status="WARN"}
@@ -381,7 +493,7 @@ function Render-Checklist([hashtable]$Data){
             $availKb=$Data['os.memory.available_kb']; if([string]::IsNullOrEmpty($availKb)){$availKb=0}
             $value="Total(KB)=${totalKb} / Available KB=${availKb}"
             $bkind="PASS"; $btext="PASS"; $msg=""
-            if(Pdf-IsNum $totalKb -and Pdf-IsNum $availKb -and $totalKb -gt 0){
+            if((Pdf-IsNum $totalKb) -and (Pdf-IsNum $availKb) -and [double]$totalKb -gt 0){
                 $usedPercent=[math]::Round((($totalKb-$availKb)/$totalKb)*100,2)
                 if($usedPercent -gt 90){$bkind="CRITICAL";$btext="CRITICAL";$msg="RAM usage ${usedPercent}% (CRITICAL - above 90%)"}
                 elseif($usedPercent -gt 40){$bkind="WARN";$btext="WARN";$msg="RAM usage ${usedPercent}% (WARN - above 40%)"}
@@ -429,8 +541,7 @@ function Render-Checklist([hashtable]$Data){
             Pdf-Row $label $val "INFO" "INFO" $note
             continue
         }
-        $raw=$Data[$keys]
-        if([string]::IsNullOrEmpty($raw)){$raw=""}
+        $raw=Pdf-Raw $keys
         if($kind -eq 'T'){
             $expected=$note
             if($raw -eq $expected){ Pdf-Row $label $raw "PASS" "PASS" "Expected: $expected" }
@@ -486,7 +597,7 @@ function Render-Checklist([hashtable]$Data){
                 foreach($k in $hk){
                     $result=$Data["health.$k.result"]
                     if(-not [string]::IsNullOrEmpty($result)){
-                        if($result -eq 'fail'){ $worst='fail' }
+                        if($result -eq 'fail' -or $result -eq 'critical'){ $worst='fail' }
                         elseif($result -eq 'warn' -and $worst -ne 'fail'){ $worst='warn' }
                     }
                     $m=$Data["health.$k.message"]

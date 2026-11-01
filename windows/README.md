@@ -4,7 +4,7 @@ This directory contains an independent Windows implementation of the IceWarp
 Health Agent. It is written for **Windows PowerShell 5.1** and does not use
 Bash, `agent.sh`, or any file under the Linux `lib/` directory.
 
-Current status: **0.1.8, 27 collectors, the health engine and PDF reports**.
+Current status: **0.1.9, 27 collectors, the health engine and PDF reports**.
 Configuration, logging, the `tool.exe` wrapper, schema-compatible flat JSON
 output, DNS/SMTP/security/storage/license/backup collectors, the health
 evaluation engine, and Pester contract tests are in place. All 432 Linux
@@ -110,7 +110,7 @@ Example JSON:
 
 ```json
 {
-    "agent.version": "0.1.8",
+    "agent.version": "0.1.9",
     "agent.platform": "windows",
     "icewarp.version": "14.3.0.12",
     "icewarp.tool.available": true,
@@ -266,7 +266,7 @@ service-account guidance, log handling, and troubleshooting.
   `v*`.
 - The Linux auto-updater follows `origin/main`. It does not run the Windows
   agent, and the Windows scaffold does not call the Linux updater.
-- Automatic updates for Windows are not implemented in 0.1.8.
+- Automatic updates for Windows are not implemented in 0.1.9.
 
 For repository-wide context, see the root [`README.md`](../README.md) and
 [`CLAUDE.md`](../CLAUDE.md).

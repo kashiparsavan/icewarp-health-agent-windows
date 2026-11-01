@@ -1160,4 +1160,95 @@ Loading domains...
         # The checklist file must actually be found (not the "not found" fallback line).
         Assert-True -Condition ([System.IO.File]::ReadAllText($techPath) -notmatch 'Checklist file not found') -Because 'checklist.conf.pdf was not resolved.'
     }
+
+    It 'PDF reports follow the health engine, never overlap text, and order actions by severity' {
+        $libRoot = Join-Path $script:agentRoot 'lib'
+        . (Join-Path $libRoot 'ReportTechnical.ps1')
+        . (Join-Path $libRoot 'ReportManagement.ps1')
+
+        # Parse every "BT /font size Tf x y Td (text) Tj ET" run, page by page.
+        function Get-PdfTextRuns {
+            param([string]$Path)
+            $raw = [System.IO.File]::ReadAllText($Path)
+            $pages = @()
+            foreach ($stream in [regex]::Matches($raw, 'stream\n(.*?)endstream', [System.Text.RegularExpressions.RegexOptions]::Singleline)) {
+                $runs = @(foreach ($m in [regex]::Matches($stream.Groups[1].Value, 'BT /(\S+) ([\d.]+) Tf ([\d.-]+) ([\d.-]+) Td \((.*?)\) Tj ET')) {
+                    $size = [double]$m.Groups[2].Value
+                    $text = $m.Groups[5].Value -replace '\\(.)', '$1'
+                    [pscustomobject]@{ Font = $m.Groups[1].Value; Size = $size; X = [double]$m.Groups[3].Value; Y = [double]$m.Groups[4].Value; W = $text.Length * $size * 0.5; Text = $text }
+                })
+                $pages += , $runs
+            }
+            return , $pages
+        }
+
+        # Mail-flow DNS records all exist, but STARTTLS is a native $false:
+        # the health engine fails mail_flow and the PDFs must agree.
+        $config = Get-AgentConfig -Root $script:agentRoot
+        $config.LogDirectory = Join-Path $script:tempRoot 'logs'
+        $context = Initialize-AgentContext -Root $script:agentRoot -Config $config -Version '0.1.0'
+        $data = $context.Data
+        foreach ($key in @('dns.spf.found', 'dns.dkim.found', 'dns.dmarc.found', 'dns.ptr.exists', 'dns.lookup_test.ok', 'dns.resolver.external_test_ok')) { $data[$key] = $true }
+        $data['smtp.starttls_live_test'] = $false
+        $data['icewarp.migration.has_errors'] = $false
+        $data['os.memory.total_kb'] = '8388608'
+        $data['os.memory.available_kb'] = '6291456'
+        $data['os.cpu.load1'] = '10'
+        $data['os.cpu.count'] = '4'
+        $data['monitor.cpu.threshold_percent'] = '50'
+        Invoke-HealthEvaluation -Data $data
+        Assert-Equal -Expected 'fail' -Actual $data['health.mail_flow.result']
+
+        $script:CHECKLIST_CAPTURED = $null
+        $techPath = Join-Path $script:tempRoot 'report.pdf'
+        $mgmtPath = Join-Path $script:tempRoot 'management_report.pdf'
+        [void](Build-TechnicalReportPdf -Data $data -OutPath $techPath)
+        [void](Build-ManagementReportPdf -Data $data -OutPath $mgmtPath -Version '0.1.0' -Date '2026-11-01')
+
+        # 1. Native booleans are compared correctly (no N/A fallback).
+        $techRuns = @((Get-PdfTextRuns -Path $techPath) | ForEach-Object { $_ })
+        $tlsIndex = [array]::IndexOf(@($techRuns | ForEach-Object { $_.Text }), 'Check TLS and Start TLS')
+        Assert-True -Condition ($tlsIndex -ge 0) -Because 'STARTTLS row missing from the technical PDF.'
+        Assert-Equal -Expected 'Missing' -Actual $techRuns[$tlsIndex + 1].Text -Because 'A $false STARTTLS result must render as Missing.'
+        Assert-Equal -Expected 'CRITICAL' -Actual $techRuns[$tlsIndex + 2].Text
+
+        # 2. Health-owned rows take their badge from health.*, e.g. CPU.
+        $cpuIndex = [array]::IndexOf(@($techRuns | ForEach-Object { $_.Text }), 'CPU Usage')
+        $expectedCpuBadge = switch ($data['health.cpu.result']) { 'pass' { 'PASS' } 'warn' { 'WARN' } default { 'CRITICAL' } }
+        Assert-Equal -Expected $expectedCpuBadge -Actual $techRuns[$cpuIndex + 2].Text -Because 'CPU badge must equal health.cpu.result.'
+
+        # 3. The executive section status follows health.mail_flow.result.
+        $mgmtPages = Get-PdfTextRuns -Path $mgmtPath
+        $mailPage = @($mgmtPages | Where-Object { @($_ | Where-Object { $_.Text -eq 'DNS & Mail Flow Verification' }).Count -gt 0 })[0]
+        Assert-True -Condition (@($mailPage | Where-Object { $_.Text -eq 'Status: FAIL' }).Count -eq 1) -Because 'Mail flow section must show FAIL when health.mail_flow is fail.'
+        Assert-True -Condition (@($mgmtPages[1] | Where-Object { $_.Text -eq 'CRITICAL' -and $_.Size -eq 22 }).Count -eq 1) -Because 'Executive overall must follow health.summary.overall.'
+
+        # 4. No two text runs overlap, and nothing is drawn off the page.
+        foreach ($pdfPages in @($mgmtPages, (Get-PdfTextRuns -Path $techPath))) {
+            foreach ($runs in $pdfPages) {
+                for ($i = 0; $i -lt $runs.Count; $i++) {
+                    $a = $runs[$i]
+                    if ($a.X -lt 0 -or $a.X -ge 612) { throw ("Text drawn off the page: '{0}' at x={1}" -f $a.Text, $a.X) }
+                    for ($k = $i + 1; $k -lt $runs.Count; $k++) {
+                        $b = $runs[$k]
+                        if (($a.Y -lt ($b.Y + $b.Size * 0.72)) -and ($b.Y -lt ($a.Y + $a.Size * 0.72)) -and
+                            ($a.X -lt ($b.X + $b.W)) -and ($b.X -lt ($a.X + $a.W))) {
+                            throw ("Overlapping text: '{0}' and '{1}'" -f $a.Text, $b.Text)
+                        }
+                    }
+                }
+            }
+        }
+
+        # 5. Recommended actions: numbered 1..N in order, all FAIL before any WARN.
+        $actionRuns = @($mgmtPages | Where-Object { @($_ | Where-Object { $_.Text -match '^\d+\.$' }).Count -gt 0 } | ForEach-Object { $_ })
+        $numbers = @($actionRuns | Where-Object { $_.Text -match '^\d+\.$' } | ForEach-Object { [int]$_.Text.TrimEnd('.') })
+        Assert-True -Condition ($numbers.Count -gt 1) -Because 'Expected several recommended actions.'
+        for ($i = 0; $i -lt $numbers.Count; $i++) { Assert-Equal -Expected ($i + 1) -Actual $numbers[$i] -Because 'Action numbering must be sequential.' }
+        $severities = @($actionRuns | Where-Object { $_.Font -eq 'Helvetica-Bold' -and $_.Size -eq 8 -and ($_.Text -eq 'FAIL' -or $_.Text -eq 'WARN') } | ForEach-Object { $_.Text })
+        $firstWarn = [array]::IndexOf($severities, 'WARN')
+        if ($firstWarn -ge 0) {
+            Assert-True -Condition (@($severities[$firstWarn..($severities.Count - 1)] | Where-Object { $_ -eq 'FAIL' }).Count -eq 0) -Because 'A FAIL action was listed after a WARN action.'
+        }
+    }
 }

@@ -6,7 +6,7 @@
 
 ### Key Characteristics
 - **Platform:** Windows Server 2012 R2 or later, Windows 10/11
-- **Version:** 0.1.8 (Windows-specific, independent of Linux)
+- **Version:** 0.1.9 (Windows-specific, independent of Linux)
 - **Runtime:** Windows PowerShell 5.1 — no Bash, no Linux dependencies
 - **Schema:** 432-key flat dotted namespace in `output/health.json` (parity with Linux)
 - **Outputs:**
@@ -94,6 +94,7 @@
   - `lib/ReportTechnical.ps1` (technical report)
   - `lib/ReportManagement.ps1` (executive report)
 - Never leave hardcoded values in PDF renderers that differ from health engine.
+- Since 0.1.9 the renderers read `health.<name>.result` / `.message` for every checklist row listed in `$script:PDF_HEALTH_ROW_MAP` (ReportTechnical.ps1), and the executive report takes section status and the overall verdict from `health.*` (`$script:MR_SECTION_PILLARS`, `health.summary.overall`). Map new rows there instead of adding thresholds.
 
 ### 3.3 Health Status Discipline
 - **NO arbitrary INFO statuses:** Missing/invalid settings → `WARN` or `CRITICAL`, never `INFO`
@@ -167,7 +168,7 @@ backup, mail_flow, tls, access, threat, resources, os_update, monitoring, databa
 
 ```
 icewarp-health-agent-windows/
-├── VERSION                     # Windows agent version (0.1.8)
+├── VERSION                     # Windows agent version (0.1.9)
 ├── CLAUDE.md                   # This file
 ├── README.md                   # User documentation
 ├── CHANGELOG.md                # Windows version history
@@ -418,7 +419,7 @@ See `docs/api-windows-vs-linux-v14.3.0.13.md` for full comparison.
 # Run full Pester suite
 .\windows\tests\Run-Tests.ps1
 
-# Expected output: 31/31 tests passed
+# Expected output: 32/32 tests passed
 # Full agent run: exit 0, 433 keys, 0 schema violations
 ```
 
@@ -455,6 +456,7 @@ For every intentional change, update:
 ### Version History
 | Version | Date | Notes |
 |---|---|---|
+| 0.1.9 | 2026-11-01 | PDFs read health.* (row badges, section status, executive verdict), boolean value fix, overview/actions layout fixes, actions sorted by severity, PDF regression test |
 | 0.1.8 | 2026-11-01 | PS 5.1 PDF fix (Join-Path), $host rename, DSN key=value password leak, Watchdog WMI properties, version test, changelog backfill, audit docs |
 | 0.1.7 | 2026-10-31 | 8 JSON fixes: DSN redaction, ISO dates, CPU %, os.version number, primary-domain DNS, TLS missing-cert warn, disk roll-up, INFO -> ok/warn |
 | 0.1.6 | 2026-10-31 | Technical and management PDF reports (PowerShell 7 only until 0.1.8) |
@@ -509,6 +511,6 @@ For every intentional change, update:
 ---
 
 **Last Updated:** 2026-11-01  
-**Agent Version:** 0.1.8  
+**Agent Version:** 0.1.9  
 **Checklist Version:** 1.14  
 **Platform:** Windows PowerShell 5.1

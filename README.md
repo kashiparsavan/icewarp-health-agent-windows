@@ -13,7 +13,7 @@ source the Linux lib/ directory.
 |---|---|
 | Platform | Windows |
 | Entry point | windows\agent.ps1 |
-| Version | 0.1.8 |
+| Version | 0.1.9 |
 | Status | 27 collectors, health engine and PDF reports; all 432 schema keys implemented |
 
 Configuration, logging, the IceWarp tool.exe wrapper, schema-compatible flat
@@ -114,7 +114,7 @@ Example JSON:
 
 ```json
 {
-    "agent.version": "0.1.8",
+    "agent.version": "0.1.9",
     "general.technician": "Parsavan",
     "icewarp.version": "14.3.0.12",
     "icewarp.tool.available": true,
@@ -191,7 +191,7 @@ Rules:
   continues with the remaining collectors.
 - Context exposes Config, Data, Root, and Version.
 
-27 collectors ship in 0.1.8: `General/Version` plus 26 `Icewarp/*` collectors
+27 collectors ship in 0.1.9: `General/Version` plus 26 `Icewarp/*` collectors
 (see the `windows/README.md` collectors table and `CLAUDE.md`).
 
 ## Tests
@@ -219,7 +219,7 @@ live IceWarp server.
 
 ## Updates
 
-Automatic updates are not implemented for Windows in 0.1.8. For a Git
+Automatic updates are not implemented for Windows in 0.1.9. For a Git
 checkout, update manually during a maintenance window:
 
 ```powershell
